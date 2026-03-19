@@ -1,0 +1,4 @@
+# pack-refs with: peeled fully-peeled sorted 
+e5af8d29157977350c59cab0e698ee42080eba41 refs/remotes/origin/main
+695da10bd47e76a7f854b6a3fb95487ddc5f8e22 refs/remotes/origin/pre-commit-ci-update-config
+a83fd115ea758266d0a5825404c775ad6048cb49 refs/remotes/origin/protocol-v1.7.0

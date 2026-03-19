@@ -1,0 +1,16 @@
+# pack-refs with: peeled fully-peeled sorted 
+024e70ae2e0e845bf6525c5fcc540f7b4cc9d08c refs/remotes/origin/eloquent-devel
+21c8973506b559fbeaf662b181b8a0d2f0955658 refs/remotes/origin/foxy
+6360c0dd16150e5f80fac6dd5d4335ab2ae05ffe refs/remotes/origin/galactic
+59bf996fb3ee7db0026a5cd3ce0d2a39d2e602ea refs/remotes/origin/humble
+1f4e90539e4d2c3d05b8dfe022d03008f322d37b refs/remotes/origin/indigo-devel
+5efaa8ba391bf4450a02cc5bb794b586c9f7d267 refs/remotes/origin/intensity-to-laserscan
+bb361b4668308d80a1db78e34bccf1171a2d9a9b refs/remotes/origin/lunar-devel
+442b33258b3af50e2981f338e1eac3ba259f8afa refs/remotes/origin/rolling
+317e389eb3f44636e51e8d56a1156d7af9d5e1be refs/tags/1.3.0
+1f4e90539e4d2c3d05b8dfe022d03008f322d37b refs/tags/1.3.1
+9047d29d8e039b5d487a7ad73ab642b4c6e6869d refs/tags/1.4.0
+82428fa4e4c6fcf12d9287fba7403b23c18cb934 refs/tags/1.4.1
+024e70ae2e0e845bf6525c5fcc540f7b4cc9d08c refs/tags/2.0.0
+67e158ef4042ba05022acc765a6f71b32c207ac7 refs/tags/2.0.1
+d71ed2ea7405249bc5f0b2e15b89434e3291b1ce refs/tags/2.0.2

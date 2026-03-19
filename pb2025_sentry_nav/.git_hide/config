@@ -1,0 +1,33 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+[remote "origin"]
+	url = https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+	vscode-merge-base = origin/main
+[submodule "livox_ros_driver2"]
+	active = true
+	url = https://github.com/SMBU-PolarBear-Robotics-Team/livox_ros_driver2.git
+[submodule "pb_nav2_plugins"]
+	active = true
+	url = https://github.com/SMBU-PolarBear-Robotics-Team/pb_nav2_plugins.git
+[submodule "pb_omni_pid_pursuit_controller"]
+	active = true
+	url = https://github.com/SMBU-PolarBear-Robotics-Team/pb_omni_pid_pursuit_controller.git
+[submodule "pb_teleop_twist_joy"]
+	active = true
+	url = https://github.com/SMBU-PolarBear-Robotics-Team/pb_teleop_twist_joy.git
+[submodule "point_lio"]
+	active = true
+	url = https://github.com/SMBU-PolarBear-Robotics-Team/point_lio.git
+[submodule "pointcloud_to_laserscan"]
+	active = true
+	url = https://github.com/SMBU-PolarBear-Robotics-Team/pointcloud_to_laserscan.git
+[submodule "small_gicp_relocalization"]
+	active = true
+	url = https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization.git

@@ -1,0 +1,7 @@
+# pack-refs with: peeled fully-peeled sorted 
+580226ca0e76a122167cc729631c2005efa8f593 refs/remotes/origin/RM2024_SMBU_auto_sentry
+e85e79558cf746f6699888a54285fe48b3b0ac71 refs/remotes/origin/RM2025_SMBU_auto_sentry
+155f46da0b1eb3fc7c7facf43b00cb124631c807 refs/remotes/origin/grid_map_ros2
+ef965976719a1ff5fc956631c54eebf3e8023907 refs/remotes/origin/point-lio-with-grid-map
+4cc192c3e33658410769dd94faefaa00c59113d6 refs/tags/1.0.0
+^641424bf9d924f5ba0bd87ca9d91a4f148384925

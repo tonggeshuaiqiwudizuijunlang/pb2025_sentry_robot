@@ -1,0 +1,9 @@
+pb2025_nav2_patrol:
+  ros__parameters:
+    waypoints: ["2.0,0.0,0.0", "2.0,2.0,0.0"]
+    loop: true
+    wait_at_point: 0.5
+    retry_on_fail: true
+    frame_id: map
+    auto_start: false
+    action_name: navigate_to_pose

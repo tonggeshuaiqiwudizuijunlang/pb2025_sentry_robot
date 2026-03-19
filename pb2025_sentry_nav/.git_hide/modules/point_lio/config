@@ -1,0 +1,12 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	worktree = ../../../point_lio
+[remote "origin"]
+	url = https://github.com/SMBU-PolarBear-Robotics-Team/point_lio.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "RM2025_SMBU_auto_sentry"]
+	remote = origin
+	merge = refs/heads/RM2025_SMBU_auto_sentry

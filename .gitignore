@@ -1,0 +1,9 @@
+.vscode/**
+build/**
+install/**
+log/**
+.cache/**
+*.zip
+MvSdkLog/**
+MvCameraControl/**
+*.log

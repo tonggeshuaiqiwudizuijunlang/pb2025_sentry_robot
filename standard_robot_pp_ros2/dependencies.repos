@@ -1,0 +1,19 @@
+# Every repository listed here will get cloned and built during CI runs.
+# Use this for repositories that cannot be installed via rosdep.
+
+repositories:
+  pb_rm_interfaces:
+    type: git
+    url: https://github.com/SMBU-PolarBear-Robotics-Team/pb_rm_interfaces.git
+    version: main
+
+  pb2025_robot_description:
+    type: git
+    url: https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_robot_description.git
+    version: main
+
+  # auto_aim_interfaces 已移动到本地 src/interfaces/auto_aim_interfaces
+  # auto_aim_interfaces:
+  #   type: git
+  #   url: https://github.com/SMBU-PolarBear-Robotics-Team/auto_aim_interfaces.git
+  #   version: main

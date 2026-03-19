@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+
+  <!-- ==================== 子树：游戏状态检查 ==================== -->
+  <BehaviorTree ID="check_game_start">
+    <Fallback>
+      <!-- 检查比赛是否正在进行 (progress == 4) -->
+      <IsGameStatus expected_game_progress="4" key_port="{@referee_gameStatus}"/>
+      <!-- 若未开始，则停止动作并阻断整棵树 (ForceFailure) -->
+      <ForceFailure>
+        <Sequence>
+          <PublishSpinSpeed spin_speed="0.0" topic_name="cmd_spin"/>
+          <PublishTwist v_x="0.0" v_y="0.0" v_yaw="0.0" duration="0" topic_name="cmd_vel"/>
+          <PublishChassisMode chassis_mode="1" topic_name="cmd_chassis_mode"/>
+          <PublishPatrol enable="false" topic_name="/start_patrol"/>
+        </Sequence>
+      </ForceFailure>
+    </Fallback>
+  </BehaviorTree>
+
+  <!-- ==================== 子树：姿态控制 (Posture) ==================== -->
+  <!--
+    【逻辑说明】使用优先级 Fallback：
+    1. 情况 A：低血量 (HP < 200) → 高优先级进入防御姿态 (2)
+       使用 Inverter(IsStatusOK(hp_min=200))。
+       解释：IsStatusOK 在 HP >= 200 时 SUCCESS；经过 Inverter 后，HP < 200 时 SUCCESS。
+       结论：只有 HP 不足 200 时，才会进入本分支执行 PublishPosture(2)。
+
+    2. 情况 B：发现敌人且自身状态良好 → 进入进攻姿态 (1)
+       自身状态良好 (IsStatusOK) 指代 HP >= 100 且热量正常。
+
+    3. 默认情况：移动姿态 (0)
+       当不满足上述防御或进攻条件时执行。
+  -->
+  <BehaviorTree ID="posture_control">
+    <Fallback>
+      <!-- ① 紧急避险：低血量防御 (2) -->
+      <Sequence>
+        <Inverter>
+          <IsStatusOK hp_min="200" heat_max="9999" key_port="{@referee_robotStatus}"/>
+        </Inverter>
+        <PublishPosture posture="2" topic_name="cmd_posture"/>
+      </Sequence>
+
+      <!-- ② 主动进攻：发现敌人 (1) -->
+      <Sequence>
+        <IsDetectEnemy armor_id="1;2;3;4;5;7" max_distance="8.0" key_port="{@detector_armors}"/>
+        <IsStatusOK hp_min="100" heat_max="380" key_port="{@referee_robotStatus}"/>
+        <PublishPosture posture="1" topic_name="cmd_posture"/>
+      </Sequence>
+
+      <!-- ③ 默认模式：正常移动 (0) -->
+      <PublishPosture posture="0" topic_name="cmd_posture"/>
+    </Fallback>
+  </BehaviorTree>
+
+  <!-- ==================== 子树：补给导航 (Supply) ==================== -->
+  <!--
+    【修复说明】
+    1. 移除每帧发送 Topic 的 PubNav2Goal，改用 SendNav2Goal Action。
+    2. Action 节点仅在状态不足时被调用一次，发送目标后处于 RUNNING，不会导致 Nav2 顿挫。
+  -->
+  <BehaviorTree ID="supply_management">
+    <ReactiveSequence>
+      <!-- 只有在状态不足 (Need Supply) 时才继续向下执行导航逻辑 -->
+      <Inverter>
+        <IsStatusOK hp_min="200" heat_max="380" ammo_min="0" key_port="{@referee_robotStatus}"/>
+      </Inverter>
+      
+      <Sequence>
+        <!-- 显式打断巡逻插件，释放 Nav2 控制权 -->
+        <PublishPatrol enable="false" topic_name="/start_patrol"/>
+        <Fallback>
+          <!-- 已到达补给区：SUCCESS，停止导航 -->
+          <IsRfidDetected friendly_supply_zone_non_exchange="true" key_port="{@referee_rfidStatus}"/>
+          <!-- 未到达补给区：前往起始点/补给点 (x;y;yaw) -->
+          <SendNav2Goal goal="0.0;0.0;0.0" action_name="navigate_to_pose"/>
+        </Fallback>
+      </Sequence>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+  <!-- ==================== 主树：rmul_2025 ==================== -->
+  <BehaviorTree ID="rmul_2025">
+    <KeepRunningUntilFailure>
+      <ForceSuccess>
+        <ReactiveSequence>
+          <!-- 1. 安全闸门：比赛未开始则锁死指令并中断序列 -->
+          <SubTree ID="check_game_start"/>
+          
+          <!-- 2. 姿态控制 (独立执行：进攻/防御/移动) -->
+          <ForceSuccess>
+            <SubTree ID="posture_control"/>
+          </ForceSuccess>
+          
+          <!-- 3. 运动决策逻辑 (多分支互斥：根据优先级只走其中一个) -->
+          <Fallback>
+            <!-- 分支 A：低血量 (最高优先级) -> 立即进入补给/脱离逻辑 -->
+            <Sequence>
+              <Inverter>
+                <IsStatusOK hp_min="200" heat_max="9999" key_port="{@referee_robotStatus}"/>
+              </Inverter>
+              <PublishSpinSpeed spin_speed="1.0" topic_name="cmd_spin"/>
+              <PublishChassisMode chassis_mode="3" topic_name="cmd_chassis_mode"/>
+              <SubTree ID="supply_management"/>
+            </Sequence>
+
+            <!-- 分支 B：发现敌人 (次高优先级) -> 立即停止导航与底盘运动，仅保留自瞄/射击 -->
+            <Sequence>
+              <IsDetectEnemy armor_id="1;2;3;4;5;7" max_distance="8.0" key_port="{@detector_armors}"/>
+              <PublishPatrol enable="false" topic_name="/start_patrol"/>
+              <PublishSpinSpeed spin_speed="0.0" topic_name="cmd_spin"/>
+              <PublishTwist v_x="0.0" v_y="0.0" v_yaw="0.0" duration="0" topic_name="cmd_vel"/>
+              <PublishChassisMode chassis_mode="1" topic_name="cmd_chassis_mode"/>
+            </Sequence>
+
+            <!-- 分支 C：默认状态 -> 自由模式 + 开启巡逻模式 -->
+            <Sequence>
+              <PublishChassisMode chassis_mode="1" topic_name="cmd_chassis_mode"/>
+              <PublishSpinSpeed spin_speed="1.0" topic_name="cmd_spin"/>
+              <PublishPatrol enable="true" topic_name="/start_patrol"/>
+            </Sequence>
+          </Fallback>
+        </ReactiveSequence>
+      </ForceSuccess>
+    </KeepRunningUntilFailure>
+  </BehaviorTree>
+
+  <!-- 模型定义 -->
+  <TreeNodesModel>
+    <Condition ID="IsGameStatus"><input_port name="expected_game_progress" default="4" type="int"/><input_port name="min_remain_time" default="0" type="int"/><input_port name="max_remain_time" default="420" type="int"/><input_port name="key_port" default="{@referee_gameStatus}"/></Condition>
+    <Condition ID="IsStatusOK"><input_port name="hp_min" default="200" type="int"/><input_port name="heat_max" default="380" type="int"/><input_port name="ammo_min" default="0" type="int"/><input_port name="key_port" default="{@referee_robotStatus}"/></Condition>
+    <Condition ID="IsDetectEnemy"><input_port name="armor_id" default="1;2;3;4;5;7" type="std::string"/><input_port name="max_distance" default="8.0" type="double"/><input_port name="key_port" default="{@detector_armors}"/></Condition>
+    <Condition ID="IsRfidDetected"><input_port name="friendly_supply_zone_non_exchange" default="true" type="bool"/><input_port name="key_port" default="{@referee_rfidStatus}"/></Condition>
+    <Action ID="PublishPosture"><input_port name="posture" default="0" type="int"/><input_port name="topic_name" default="cmd_posture" type="std::string"/></Action>
+    <Action ID="PublishPatrol"><input_port name="enable" default="true" type="bool"/><input_port name="topic_name" default="/start_patrol" type="std::string"/></Action>
+    <Action ID="SendNav2Goal"><input_port name="goal" default="0;0;0" type="std::string"/><input_port name="action_name" default="navigate_to_pose" type="std::string"/></Action>
+    <Action ID="PublishTwist"><input_port name="v_x" default="0.0" type="double"/><input_port name="v_y" default="0.0" type="double"/><input_port name="v_yaw" default="0.0" type="double"/><input_port name="duration" default="0" type="int"/><input_port name="topic_name" default="cmd_vel" type="std::string"/></Action>
+    <Action ID="PublishChassisMode"><input_port name="chassis_mode" default="1" type="int"/><input_port name="topic_name" default="cmd_chassis_mode" type="std::string"/></Action>
+  </TreeNodesModel>
+
+</root>

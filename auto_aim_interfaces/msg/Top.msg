@@ -1,0 +1,3 @@
+int32 top_state
+int32 last_cycle
+int32 shoot_mode

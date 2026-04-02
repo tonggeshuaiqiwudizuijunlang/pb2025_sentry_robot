@@ -37,10 +37,13 @@
 #include "pb_rm_interfaces/msg/robot_state_info.hpp"
 #include "pb_rm_interfaces/msg/robot_status.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "nav_msgs/msg/odometry.hpp"
+
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "serial_driver/serial_driver.hpp"
+#include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "standard_robot_pp_ros2/packet_typedef.hpp"
 #include "standard_robot_pp_ros2/robot_info.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
@@ -82,6 +85,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
   rclcpp::Publisher<pb_rm_interfaces::msg::Buff>::SharedPtr buff_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr yq_debug_pub_;
+  rclcpp::Publisher<rm_interfaces::msg::SerialReceiveData>::SharedPtr serial_receive_pub_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   // Subscribe
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
@@ -91,6 +95,8 @@ private:
   rclcpp::Subscription<example_interfaces::msg::UInt8>::SharedPtr cmd_posture_sub_;
   rclcpp::Subscription<example_interfaces::msg::Float32>::SharedPtr cmd_spin_sub_;
   rclcpp::Subscription<example_interfaces::msg::UInt8>::SharedPtr cmd_chassis_mode_sub_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr lidar_odom_sub_;
+
 
   RobotModels robot_models_;
   std::unordered_map<std::string, rclcpp::Publisher<example_interfaces::msg::Float64>::SharedPtr>
@@ -127,6 +133,8 @@ private:
   void cmdPostureCallback(const example_interfaces::msg::UInt8::SharedPtr msg);
   void cmdSpinCallback(const example_interfaces::msg::Float32::SharedPtr msg);
   void cmdChassisModeCallback(const example_interfaces::msg::UInt8::SharedPtr msg);
+  void lidarOdomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
+
 
   void setParam(const rclcpp::Parameter & param);
   bool getDetectColor(uint8_t robot_id, uint8_t & color);
@@ -144,6 +152,8 @@ private:
 
   float last_hp_;
   float last_gimbal_pitch_odom_joint_, last_gimbal_yaw_odom_joint_;
+  float lidar_yaw_;
+
 
   // 均值滤波相关
   static constexpr size_t FILTER_WINDOW_SIZE = 3;  // 滑动窗口大小

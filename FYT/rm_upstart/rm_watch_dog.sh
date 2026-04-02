@@ -1,78 +1,70 @@
 #!/bin/bash
 # watch_dog.sh
 
-TIMEOUT=10  # 设定超时时间为10秒
-NAMESPACE="" # 命名空间 例如 "/infantry_3" 注意要有"/"
-NODE_NAMES=("armor_detector" "armor_solver" "serial_driver" "camera_driver")  # 列出所有需要监控的节点名称，注意是用空格分隔
-USER="$(whoami)" #用户名
-HOME_DIR=$(eval echo ~$USER)
-WORKING_DIR="$HOME_DIR/fyt2024-main" # 代码目录
-LAUNCH_FILE="rm_bringup bringup.launch.py" # launch 文件
-OUTPUT_FILE="$WORKING_DIR/screen.output" # 终端输出记录文件
+# 该脚本由 rm.service 启动，用于监控关键节点心跳并在崩溃时自动重启
+# 脚本作者: Antigravity Support for NUC12WSKi7
 
-rmw="rmw_fastrtps_cpp" #RMW
-export RMW_IMPLEMENTATION="$rmw" # RMW实现
+TIMEOUT=10
+NAMESPACE=""
+# 监控具有 heartbeat 话题的核心节点
+NODE_NAMES=("armor_detector" "armor_solver") 
 
-export ROS_HOSTNAME=$(hostname)
-export ROS_HOME=${ROS_HOME:=$HOME_DIR/.ros}
-export ROS_LOG_DIR="/tmp"
-
-source /opt/ros/humble/setup.bash
-source $WORKING_DIR/install/setup.bash
-
-rmw_config=""
-if [[ "$rmw" == "rmw_fastrtps_cpp" ]]
-then
-  if [[ ! -z $rmw_config ]]
-  then
-    export FASTRTPS_DEFAULT_PROFILES_FILE=$rmw_config
-  fi
-elif [[ "$rmw" == "rmw_cyclonedds_cpp" ]]
-then
-  if [[ ! -z $rmw_config ]]
-  then
-    export CYCLONEDDS_URI=$rmw_config
-  fi
-fi
+USER="nuc"
+HOME_DIR="/home/$USER"
+# 工作空间根目录
+WORKING_DIR="$HOME_DIR/pb2025_sentry_ws-main"
+OUTPUT_FILE="$WORKING_DIR/screen.output"
 
 function bringup() {
     source /opt/ros/humble/setup.bash
-    source $WORKING_DIR/install/setup.bash
-    nohup ros2 launch $LAUNCH_FILE > "$OUTPUT_FILE" 2>&1 &
+    source "$WORKING_DIR/install/setup.bash"
+    
+    echo "Starting Sentry 2025 system components at $(date)..."
+    
+    nohup ros2 launch standard_robot_pp_ros2 standard_robot_pp_ros2.launch.py > "$WORKING_DIR/standard_robot.log" 2>&1 &
+    # 1. FYT Vision (视觉识别)
+    nohup ros2 launch pb2025_sentry_bringup fyt_vision.launch.py use_hik_camera:=True > "$WORKING_DIR/fyt_vision.log" 2>&1 &
+    
+    # 2. pb2025 Navigation (实车导航 - 关闭 rviz)
+    nohup ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py slam:=True use_rviz:=False > "$WORKING_DIR/sentry_nav.log" 2>&1 &
+    
+
+    # 4. simple_sentry_control (两点往返控制)
+    nohup ros2 launch simple_sentry_control simple_sentry_control.launch.py > "$WORKING_DIR/sentry_control.log" 2>&1 &
 }
 
-function restart() {
-    pkill -f ros  # 杀掉所有ROS2进程
-    ros2 daemon stop
-    ros2 daemon start
-    bringup
-}
-
-bringup
-sleep $TIMEOUT
-sleep $TIMEOUT
-
-# 监控每个节点的心跳
-while true; do
-    for node in "${NODE_NAMES[@]}"; do
-        topic="$NAMESPACE/$node/heartbeat"
-        echo "- Check $node"
-        if ros2 topic list 2>/dev/null | grep -q $topic 2>/dev/null; then
-            data_value=$(timeout 10 ros2 topic echo $topic --once | grep -o "data: [0-9]*" | awk '{print $2}' 2>/dev/null)
-            if [ ! -z "$data_value" ]; then
-                echo "    $node is OK! Heartbeat Count: $data_value"
-            else
-                echo "    Heartbeat lost for $topic, restarting all nodes..."
-                restart
-                break 
-            
-            fi
-        else
-            echo "    Heartbeat topic $topic does not exist, restarting all nodes..."
-            restart
-            break
+function check_alive() {
+    for node_name in "${NODE_NAMES[@]}"; do
+        topic="/$node_name/heartbeat"
+        # 1. 检查话题是否存在
+        topic_list=$(ros2 topic list)
+        if [[ ! "$topic_list" =~ "$topic" ]]; then
+            echo "Topic $topic not found!"
+            return 1
+        fi
+        
+        # 2. 检查心跳话题是否有值输出
+        data_value=$(timeout 2 ros2 topic echo "$topic" --once | grep "data" | awk '{print $2}')
+        if [ -z "$data_value" ]; then
+            echo "Node $node_name heartbeat timeout!"
+            return 1
         fi
     done
+    return 0
+}
+
+# 确保启动环境干净
+echo "Cleaning up before initial bringup..."
+/usr/sbin/rm_clean_up.sh
+
+while true; do
+    # 检查核心节点心跳
+    check_alive
+    if [ $? -ne 0 ]; then
+        echo "Nodes are down or heartbeat missing at $(date). Restarting system..."
+        /usr/sbin/rm_clean_up.sh
+        bringup
+        sleep 20 # 预留更长的启动宽限期
+    fi
     sleep $TIMEOUT
 done
-

@@ -84,6 +84,12 @@ void FakeVelTransform::cmdSpinCallback(const example_interfaces::msg::Float32::S
 
 void FakeVelTransform::odometryCallback(const nav_msgs::msg::Odometry::ConstSharedPtr & msg)
 {
+  if (!is_initialized_) {
+    yaw_offset_ = tf2::getYaw(msg->pose.pose.orientation);
+    is_initialized_ = true;
+    RCLCPP_INFO(get_logger(), "Initialized yaw_offset: %.3f", yaw_offset_);
+  }
+
   // NOTE: Haven't synced with local_plan
   if ((rclcpp::Clock().now() - last_controller_activate_time_).seconds() > CONTROLLER_TIMEOUT) {
     current_robot_base_angle_ = tf2::getYaw(msg->pose.pose.orientation);
@@ -99,7 +105,7 @@ void FakeVelTransform::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr
     is_zero_vel ||
     (rclcpp::Clock().now() - last_controller_activate_time_).seconds() > CONTROLLER_TIMEOUT) {
     // If received velocity cannot be synchronized, publish it directly
-    auto aft_tf_vel = transformVelocity(msg, current_robot_base_angle_);
+    auto aft_tf_vel = transformVelocity(msg, current_robot_base_angle_ - yaw_offset_);
     cmd_vel_chassis_pub_->publish(aft_tf_vel);
   } else {
     latest_cmd_vel_ = msg;
@@ -125,8 +131,16 @@ void FakeVelTransform::syncCallback(
     current_cmd_vel = latest_cmd_vel_;
   }
 
+  if (!is_initialized_) {
+    yaw_offset_ = tf2::getYaw(odom_msg->pose.pose.orientation);
+    is_initialized_ = true;
+    RCLCPP_INFO(get_logger(), "Initialized yaw_offset in syncCallback: %.3f", yaw_offset_);
+  }
+
   current_robot_base_angle_ = tf2::getYaw(odom_msg->pose.pose.orientation);
-  float yaw_diff = current_robot_base_angle_;
+  float yaw_diff = current_robot_base_angle_ - yaw_offset_;
+  while (yaw_diff > M_PI) yaw_diff -= 2.0 * M_PI;
+  while (yaw_diff < -M_PI) yaw_diff += 2.0 * M_PI;
   geometry_msgs::msg::Twist aft_tf_vel = transformVelocity(current_cmd_vel, yaw_diff);
 
   cmd_vel_chassis_pub_->publish(aft_tf_vel);
@@ -139,7 +153,10 @@ void FakeVelTransform::publishTransform()
   t.header.frame_id = robot_base_frame_;
   t.child_frame_id = fake_robot_base_frame_;
   tf2::Quaternion q;
-  q.setRPY(0, 0, -current_robot_base_angle_);
+  double tf_yaw = -(current_robot_base_angle_ - yaw_offset_);
+  while (tf_yaw > M_PI) tf_yaw -= 2.0 * M_PI;
+  while (tf_yaw < -M_PI) tf_yaw += 2.0 * M_PI;
+  q.setRPY(0, 0, tf_yaw);
   t.transform.rotation = tf2::toMsg(q);
   tf_broadcaster_->sendTransform(t);
 }

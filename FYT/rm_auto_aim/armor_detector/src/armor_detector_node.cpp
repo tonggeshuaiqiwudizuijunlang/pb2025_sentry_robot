@@ -19,6 +19,7 @@
 
 // std
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <functional>
@@ -71,6 +72,7 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions &options)
 
   // Transform initialize
   odom_frame_ = this->declare_parameter("target_frame", "odom");
+  transform_timeout_ = this->declare_parameter("transform_timeout", 0.05);
   imu_to_camera_ = Eigen::Matrix3d::Identity();
 
   // Visualization Marker Publisher
@@ -128,6 +130,20 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions &options)
       std::bind(&ArmorDetectorNode::imageCallback, this,
                 std::placeholders::_1));
 
+  use_yq_enemy_color_ = this->declare_parameter("use_yq_enemy_color", true);
+  yq_enemy_color_index_ = this->declare_parameter("yq_enemy_color_index", 1);
+  std::string yq_color_topic =
+      this->declare_parameter("yq_color_topic", "serial/yq_raw_debug");
+  if (use_yq_enemy_color_) {
+    yq_debug_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+        yq_color_topic, rclcpp::SensorDataQoS(),
+        std::bind(&ArmorDetectorNode::yqDebugCallback, this,
+                  std::placeholders::_1));
+    FYT_INFO("armor_detector",
+             "Use YQ enemy color from topic: {}, index: {}", yq_color_topic,
+             yq_enemy_color_index_);
+  }
+
   // target_sub_ = this->create_subscription<rm_interfaces::msg::Target>(
   //   "armor_solver/target",
   //   rclcpp::SensorDataQoS(),
@@ -154,7 +170,8 @@ void ArmorDetectorNode::imageCallback(
   try {
     rclcpp::Time target_time = img_msg->header.stamp;
     auto odom_to_gimbal = tf2_buffer_->lookupTransform(
-        odom_frame_, img_msg->header.frame_id, tf2::TimePointZero);
+      odom_frame_, img_msg->header.frame_id, rclcpp::Time(0),
+      rclcpp::Duration::from_seconds(transform_timeout_));
     auto msg_q = odom_to_gimbal.transform.rotation;
     tf2::Quaternion tf_q;
     tf2::fromMsg(msg_q, tf_q);
@@ -164,6 +181,9 @@ void ArmorDetectorNode::imageCallback(
         tf2_matrix.getRow(1)[1], tf2_matrix.getRow(1)[2],
         tf2_matrix.getRow(2)[0], tf2_matrix.getRow(2)[1],
         tf2_matrix.getRow(2)[2];
+  } catch (const tf2::TransformException &ex) {
+    FYT_ERROR("armor_detector", "TF Error: {}", ex.what());
+    return;
   } catch (...) {
     FYT_ERROR("armor_detector", "Something Wrong when lookUpTransform");
     return;
@@ -463,6 +483,31 @@ void ArmorDetectorNode::setModeCallback(
   }
 
   FYT_WARN("armor_detector", "Set mode to {}", mode_name);
+}
+
+void ArmorDetectorNode::yqDebugCallback(
+    const std_msgs::msg::Float64MultiArray::SharedPtr yq_msg) {
+  if (detector_ == nullptr || yq_enemy_color_index_ < 0 ||
+      static_cast<size_t>(yq_enemy_color_index_) >= yq_msg->data.size()) {
+    return;
+  }
+
+  const int yq_enemy_color =
+      static_cast<int>(std::lround(yq_msg->data[yq_enemy_color_index_]));
+  if (yq_enemy_color != 0 && yq_enemy_color != 1) {
+    return;
+  }
+  if (yq_enemy_color == last_yq_enemy_color_raw_) {
+    return;
+  }
+  last_yq_enemy_color_raw_ = yq_enemy_color;
+
+  // YQ: 0=BLUE, 1=RED; FYT EnemyColor: RED=0, BLUE=1.
+  detector_->detect_color =
+      (yq_enemy_color == 0) ? EnemyColor::BLUE : EnemyColor::RED;
+  FYT_INFO("armor_detector", "YQ enemy_color={} -> detect_color={}",
+           yq_enemy_color,
+           detector_->detect_color == EnemyColor::BLUE ? "BLUE" : "RED");
 }
 
 } // namespace fyt::auto_aim

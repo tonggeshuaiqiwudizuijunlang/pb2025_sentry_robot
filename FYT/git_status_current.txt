@@ -1,0 +1,39 @@
+On branch main
+Your branch is ahead of 'origin/main' by 1 commit.
+  (use "git push" to publish your local commits)
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	modified:   rm_auto_aim/armor_detector/include/armor_detector/armor_detector_node.hpp
+	modified:   rm_auto_aim/armor_detector/package.xml
+	modified:   rm_auto_aim/armor_detector/src/armor_detector_node.cpp
+	modified:   rm_auto_aim/armor_solver/CMakeLists.txt
+	modified:   rm_auto_aim/armor_solver/include/armor_solver/armor_solver.hpp
+	modified:   rm_auto_aim/armor_solver/include/armor_solver/armor_solver_node.hpp
+	modified:   rm_auto_aim/armor_solver/include/armor_solver/armor_tracker.hpp
+	modified:   rm_auto_aim/armor_solver/src/armor_solver.cpp
+	modified:   rm_auto_aim/armor_solver/src/armor_tracker.cpp
+	modified:   rm_bringup/config/camera_info.yaml
+	modified:   rm_bringup/config/launch_params.yaml
+	modified:   rm_bringup/config/node_params/camera_driver_params.yaml
+	modified:   rm_bringup/launch/bringup.launch.py
+	modified:   rm_upstart/register_service.sh
+	modified:   rm_upstart/rm_watch_dog.sh
+
+Unmerged paths:
+  (use "git restore --staged <file>..." to unstage)
+  (use "git add <file>..." to mark resolution)
+	both modified:   rm_auto_aim/armor_solver/include/armor_solver/motion_model.hpp
+	both modified:   rm_auto_aim/armor_solver/src/armor_solver_node.cpp
+	both modified:   rm_bringup/config/node_params/armor_detector_params.yaml
+	both modified:   rm_bringup/config/node_params/armor_solver_params.yaml
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	F_FYT_last_commits.txt
+	F_FYT_reflog.txt
+	F_FYT_reflog_date.txt
+	git_status_current.txt
+	stash_content.diff
+	stash_diff.txt
+

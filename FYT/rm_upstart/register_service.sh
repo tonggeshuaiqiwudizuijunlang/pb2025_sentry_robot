@@ -21,7 +21,7 @@ cp ./rm_watch_dog.sh /usr/sbin/
 # 动态创建 systemd service 文件内容
 read -r -d '' SERVICE_CONTENT << EOF
 [Unit]
-Description=FYT2024 Vision Project
+Description=Sentry 2025 Full Stack Service (FYT + pb2025 Nav)
 After=network.target
 
 [Service]

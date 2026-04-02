@@ -16,7 +16,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #ifndef ARMOR_SOLVER_SOLVER_NODE_HPP_
 #define ARMOR_SOLVER_SOLVER_NODE_HPP_
 
@@ -46,6 +45,7 @@
 
 namespace fyt::auto_aim {
 using tf2_filter = tf2_ros::MessageFilter<rm_interfaces::msg::Armors>;
+
 class ArmorSolverNode : public rclcpp::Node {
 public:
   explicit ArmorSolverNode(const rclcpp::NodeOptions &options);
@@ -55,19 +55,19 @@ private:
 
   void initMarkers() noexcept;
 
-  void publishMarkers(const rm_interfaces::msg::Target &target_msg,
+  void publishMarkers(const rm_interfaces::msg::Target  &target_msg,
                       const rm_interfaces::msg::GimbalCmd &gimbal_cmd) noexcept;
 
+  void setModeCallback(const std::shared_ptr<rm_interfaces::srv::SetMode::Request>  request,
+                             std::shared_ptr<rm_interfaces::srv::SetMode::Response> response);
 
-  void setModeCallback(const std::shared_ptr<rm_interfaces::srv::SetMode::Request> request,
-                       std::shared_ptr<rm_interfaces::srv::SetMode::Response> response);
-  
   bool debug_mode_;
+  bool use_imm_{true};  ///< Master switch for IMM tracker
 
   // Heartbeat
   HeartBeatPublisher::SharedPtr heartbeat_;
 
-  // The time when the last message was received
+  // Time tracking
   rclcpp::Time last_time_;
   double dt_;
 
@@ -80,28 +80,30 @@ private:
   // Armor Solver
   std::unique_ptr<Solver> solver_;
 
+  // ── 4-state Auto-Aim FSM (ported from wust_vision VeryAimer) ─────────────
+  AutoAimFsmController aim_fsm_;
+  std::string          last_tracked_id_;  ///< Detect when the tracked robot changes
+
   // Subscriber with tf2 message_filter
   std::string target_frame_;
-  std::shared_ptr<tf2_ros::Buffer> tf2_buffer_;
+  std::shared_ptr<tf2_ros::Buffer>          tf2_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf2_listener_;
   message_filters::Subscriber<rm_interfaces::msg::Armors> armors_sub_;
-  rm_interfaces::msg::Target armor_target_;
-  std::shared_ptr<tf2_filter> tf2_filter_;
+  rm_interfaces::msg::Target                armor_target_;
+  std::shared_ptr<tf2_filter>               tf2_filter_;
 
-  // Measurement publisher
+  // Publishers
   rclcpp::Publisher<rm_interfaces::msg::Measurement>::SharedPtr measure_pub_;
-
-  // Publisher
-  rclcpp::Publisher<rm_interfaces::msg::Target>::SharedPtr target_pub_;
-  rclcpp::Publisher<rm_interfaces::msg::GimbalCmd>::SharedPtr gimbal_pub_;
+  rclcpp::Publisher<rm_interfaces::msg::Target>::SharedPtr      target_pub_;
+  rclcpp::Publisher<rm_interfaces::msg::GimbalCmd>::SharedPtr   gimbal_pub_;
   rclcpp::TimerBase::SharedPtr pub_timer_;
   void timerCallback();
-  
+
   // Enable/Disable Armor Solver
   bool enable_;
   rclcpp::Service<rm_interfaces::srv::SetMode>::SharedPtr set_mode_srv_;
 
-  // Visualization marker publisher
+  // Visualization markers
   visualization_msgs::msg::Marker position_marker_;
   visualization_msgs::msg::Marker linear_v_marker_;
   visualization_msgs::msg::Marker angular_v_marker_;

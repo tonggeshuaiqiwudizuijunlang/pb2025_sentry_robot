@@ -76,6 +76,8 @@ private:
   geometry_msgs::msg::Twist::SharedPtr latest_cmd_vel_;
   double current_robot_base_angle_;
   rclcpp::Time last_controller_activate_time_;
+  bool is_initialized_ = false;
+  double yaw_offset_ = 0.0;
 };
 
 }  // namespace fake_vel_transform

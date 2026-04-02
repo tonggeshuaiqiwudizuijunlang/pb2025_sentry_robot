@@ -35,6 +35,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 // std
 #include <memory>
@@ -78,6 +79,9 @@ private:
       const std::shared_ptr<rm_interfaces::srv::SetMode::Request> request,
       std::shared_ptr<rm_interfaces::srv::SetMode::Response> response);
 
+  void yqDebugCallback(
+      const std_msgs::msg::Float64MultiArray::SharedPtr yq_msg);
+
   // Dynamic Parameter
   rcl_interfaces::msg::SetParametersResult
   onSetParameters(std::vector<rclcpp::Parameter> parameters);
@@ -112,6 +116,12 @@ private:
 
   // Image subscription
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr img_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr yq_debug_sub_;
+
+  // YQ enemy color bridge
+  bool use_yq_enemy_color_;
+  int yq_enemy_color_index_;
+  int last_yq_enemy_color_raw_ = -1;
 
   // Target subscription
   // rclcpp::Subscription<rm_interfaces::msg::Target>::SharedPtr target_sub_;
@@ -120,6 +130,7 @@ private:
 
   // ReceiveData subscripiton
   std::string odom_frame_;
+  double transform_timeout_;
   Eigen::Matrix3d imu_to_camera_;
   std::shared_ptr<tf2_ros::Buffer> tf2_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf2_listener_;

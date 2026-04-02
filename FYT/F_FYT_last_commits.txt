@@ -1,0 +1,13 @@
+3a786d1 Cleanup armor_solver and fix array bug
+dae7547 fix bugs
+c05e895 rename ArmorPoseSolver -> ArmorPoseEstimator
+4b82f2f update
+117130d sync to version of 20 July in github
+07d3aea fix a bug
+0feb093 fix typos in description of BA
+aca01b4 fix the README rendering issue
+2a46b53 fix a header bug; update README
+6ae8c26 sync to the July 2024 version
+28d94de fix some typos & update README.md
+08293ab first commit in github
+4e80808 Initial commit

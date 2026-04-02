@@ -105,6 +105,7 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
             {"autostart": autostart},
             {"node_names": lifecycle_nodes},
+            {"bond_timeout": 10.0},
         ],
     )
 
@@ -154,30 +155,30 @@ def generate_launch_description():
         arguments=["--ros-args", "--log-level", log_level],
     )
 
-    start_static_transform_node = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="static_transform_publisher_map2odom",
-        output="screen",
-        arguments=[
-            "--x",
-            "0.0",
-            "--y",
-            "0.0",
-            "--z",
-            "0.0",
-            "--roll",
-            "0.0",
-            "--pitch",
-            "0.0",
-            "--yaw",
-            "0.0",
-            "--frame-id",
-            "map",
-            "--child-frame-id",
-            "odom",
-        ],
-    )
+    # start_static_transform_node = Node(
+    #     package="tf2_ros",
+    #     executable="static_transform_publisher",
+    #     name="static_transform_publisher_map2odom",
+    #     output="screen",
+    #     arguments=[
+    #         "--x",
+    #         "0.0",
+    #         "--y",
+    #         "0.0",
+    #         "--z",
+    #         "0.0",
+    #         "--roll",
+    #         "0.0",
+    #         "--pitch",
+    #         "0.0",
+    #         "--yaw",
+    #         "0.0",
+    #         "--frame-id",
+    #         "map",
+    #         "--child-frame-id",
+    #         "odom",
+    #     ],
+    # )
 
     ld = LaunchDescription()
 
@@ -196,6 +197,6 @@ def generate_launch_description():
     ld.add_action(start_pointcloud_to_laserscan_node)
     ld.add_action(start_sync_slam_toolbox_node)
     ld.add_action(start_point_lio_node)
-    ld.add_action(start_static_transform_node)
+    # ld.add_action(start_static_transform_node)
 
     return ld

@@ -34,6 +34,7 @@
 #include "rm_interfaces/msg/target.hpp"
 #include "rm_utils/math/extended_kalman_filter.hpp"
 #include "armor_solver/motion_model.hpp"
+#include "armor_solver/imm_tracker.hpp"
 
 namespace fyt::auto_aim {
 
@@ -57,7 +58,14 @@ public:
     TEMP_LOST,
   } tracker_state;
 
+  // --- Original EKF (kept for backward compatibility / outpost mode) ---
   std::unique_ptr<RobotStateEKF> ekf;
+
+  // --- IMM tracker (used when use_imm == true) ---
+  std::unique_ptr<IMMTracker> imm;
+
+  // If true, IMM is active; if false, original EKF is used
+  bool use_imm{false};
 
   int tracking_thres;  // frame
   int lost_thres;      // second
@@ -73,6 +81,15 @@ public:
 
   // To store offset relative to the reference plane
   double d_zc;
+
+  // Get IMM model probabilities: [CV, CA, CTRV], empty if not using IMM
+  std::array<double, IMMTracker::NUM_MODELS> getModelProbs() const noexcept {
+    if (imm) return imm->getModelProbs();
+    return {1.0, 0.0, 0.0};
+  }
+
+  // Initialize IMM tracker from first detection
+  void initIMM(const Armor &a) noexcept;
 
 private:
   void initEKF(const Armor &a) noexcept;

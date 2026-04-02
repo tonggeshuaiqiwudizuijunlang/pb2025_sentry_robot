@@ -1,0 +1,3 @@
+c4adc16 HEAD@{0}: reset: moving to HEAD
+c4adc16 HEAD@{1}: reset: moving to HEAD
+c4adc16 HEAD@{2}: commit (initial): Snapshot backup before major refactor

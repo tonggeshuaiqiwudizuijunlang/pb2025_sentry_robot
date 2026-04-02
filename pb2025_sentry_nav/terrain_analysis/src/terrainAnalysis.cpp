@@ -512,10 +512,8 @@ int main(int argc, char ** argv)
             else if (quantileID >= planarPointElevSize)
               quantileID = planarPointElevSize - 1;
 
-            if (
-              planarPointElev[i][quantileID] > planarPointElev[i][0] + maxGroundLift &&
-              limitGroundLift) {
-              planarVoxelElev[i] = planarPointElev[i][0] + maxGroundLift;
+            if (limitGroundLift && planarPointElev[i][quantileID] > vehicleZ + maxGroundLift) {
+              planarVoxelElev[i] = vehicleZ + maxGroundLift;
             } else {
               planarVoxelElev[i] = planarPointElev[i][quantileID];
             }
@@ -536,6 +534,9 @@ int main(int argc, char ** argv)
 
             if (minID != -1) {
               planarVoxelElev[i] = planarPointElev[i][minID];
+              if (limitGroundLift && planarVoxelElev[i] > vehicleZ + maxGroundLift) {
+                planarVoxelElev[i] = vehicleZ + maxGroundLift;
+              }
             }
           }
         }

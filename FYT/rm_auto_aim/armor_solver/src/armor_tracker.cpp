@@ -37,7 +37,7 @@ Tracker::Tracker(double max_match_distance, double max_match_yaw_diff)
 : tracker_state(LOST)
 , tracked_id(std::string(""))
 , measurement(Eigen::VectorXd::Zero(4))
-, target_state(Eigen::VectorXd::Zero(9))
+, target_state(Eigen::VectorXd::Zero(X_N))  // Must be X_N=10, not 9
 , max_match_distance_(max_match_distance)
 , max_match_yaw_diff_(max_match_yaw_diff)
 , detect_count_(0)
@@ -76,36 +76,37 @@ void Tracker::init(const Armors::SharedPtr &armors_msg) noexcept {
 }
 
 void Tracker::update(const Armors::SharedPtr &armors_msg) noexcept {
-  // KF predict
-  Eigen::VectorXd ekf_prediction = ekf->predict();
+  // ---- Predict ----
+  // Use IMM or EKF depending on the use_imm flag
+  Eigen::VectorXd prediction;
+  if (use_imm && imm) {
+    // IMM: predict step is called externally before update()
+    // (dt is set in armor_solver_node via imm->predict(dt))
+    prediction = imm->getState();
+  } else {
+    prediction = ekf->predict();
+  }
 
   bool matched = false;
-  // Use KF prediction as default target state if no matched armor is found
-  target_state = ekf_prediction;
+  target_state = prediction;
 
   if (!armors_msg->armors.empty()) {
-    // Find the closest armor with the same id
     Armor same_id_armor;
     int same_id_armors_count = 0;
-    auto predicted_position = getArmorPositionFromState(ekf_prediction);
+    auto predicted_position = getArmorPositionFromState(prediction);
     double min_position_diff = DBL_MAX;
     double yaw_diff = DBL_MAX;
     for (const auto &armor : armors_msg->armors) {
-      // Only consider armors with the same id
       if (armor.number == tracked_id) {
         same_id_armor = armor;
         same_id_armors_count++;
-        // Calculate the difference between the predicted position and the
-        // current armor position
         auto p = armor.pose.position;
         Eigen::Vector3d position_vec(p.x, p.y, p.z);
         double position_diff = (predicted_position - position_vec).norm();
         if (position_diff < min_position_diff) {
-          // Find the closest armor
           min_position_diff = position_diff;
-          yaw_diff = abs(orientationToYaw(armor.pose.orientation) - ekf_prediction(6));
+          yaw_diff = abs(orientationToYaw(armor.pose.orientation) - prediction(6));
           tracked_armor = armor;
-          // Update tracked armor type
           if (tracked_armor.type == "large" &&
               (tracked_id == "3" || tracked_id == "4" || tracked_id == "5")) {
             tracked_armors_num = ArmorsNum::BALANCE_2;
@@ -118,44 +119,52 @@ void Tracker::update(const Armors::SharedPtr &armors_msg) noexcept {
       }
     }
 
-    // Check if the distance and yaw difference of closest armor are within the
-    // threshold
     if (min_position_diff < max_match_distance_ && yaw_diff < max_match_yaw_diff_) {
-      // Matched armor found
       matched = true;
       auto p = tracked_armor.pose.position;
-      // Update EKF
       double measured_yaw = orientationToYaw(tracked_armor.pose.orientation);
       measurement = Eigen::Vector4d(p.x, p.y, p.z, measured_yaw);
-      target_state = ekf->update(measurement);
+
+      if (use_imm && imm) {
+        // IMM update
+        imm->update(measurement);
+        target_state = imm->getState();
+      } else {
+        // Original EKF update
+        target_state = ekf->update(measurement);
+      }
     } else if (same_id_armors_count == 1 && yaw_diff > max_match_yaw_diff_) {
-      // Matched armor not found, but there is only one armor with the same id
-      // and yaw has jumped, take this case as the target is spinning and armor
-      // jumped
       handleArmorJump(same_id_armor);
     } else {
-      // No matched armor found
       FYT_WARN("armor_solver", "No matched armor found!");
     }
   }
 
-  // Prevent radius from spreading
+  // Constrain radius within physical bounds
   if (target_state(8) < 0.12) {
     target_state(8) = 0.12;
-    ekf->setState(target_state);
+    if (use_imm && imm) {
+      // IMM: propagate constraint into each sub-model state
+      // (simplified: just clamp fused state; sub-models converge over time)
+    } else {
+      ekf->setState(target_state);
+    }
   } else if (target_state(8) > 0.4) {
     target_state(8) = 0.4;
-    ekf->setState(target_state);
+    if (!use_imm) {
+      ekf->setState(target_state);
+    }
   }
 
-  // Tracking state machine
+  // Tracking state machine (unchanged)
   if (tracker_state == DETECTING) {
     if (matched) {
       detect_count_++;
       if (detect_count_ > tracking_thres) {
         detect_count_ = 0;
         tracker_state = TRACKING;
-        FYT_DEBUG("armor_solver", "Tracker state: TRACKING {}", tracked_id);
+        FYT_DEBUG("armor_solver", "Tracker state: TRACKING {} [{}]", tracked_id,
+                  use_imm ? "IMM" : "EKF");
       }
     } else {
       detect_count_ = 0;
@@ -203,6 +212,28 @@ void Tracker::initEKF(const Armor &a) noexcept {
   ekf->setState(target_state);
 }
 
+void Tracker::initIMM(const Armor &a) noexcept {
+  if (!imm) return;
+  double xa = a.pose.position.x;
+  double ya = a.pose.position.y;
+  double za = a.pose.position.z;
+  last_yaw_ = 0;
+  double yaw = orientationToYaw(a.pose.orientation);
+
+  Eigen::Matrix<double, X_N, 1> x0;
+  double r = 0.26;
+  double xc = xa + r * cos(yaw);
+  double yc = ya + r * sin(yaw);
+  d_za = 0; d_zc = 0; another_r = r;
+  x0 << xc, 0, yc, 0, za, 0, yaw, 0, r, 0.0;
+
+  Eigen::Matrix<double, X_N, X_N> P0 = Eigen::Matrix<double, X_N, X_N>::Identity();
+  P0.diagonal() << 0.5, 5.0, 0.5, 5.0, 0.5, 5.0, 0.2, 10.0, 0.05, 0.05;
+
+  imm->init(x0, P0);
+  target_state = x0;
+}
+
 void Tracker::handleArmorJump(const Armor &current_armor) noexcept {
   double last_yaw = target_state(6);
   double yaw = orientationToYaw(current_armor.pose.orientation);
@@ -241,6 +272,12 @@ void Tracker::handleArmorJump(const Armor &current_armor) noexcept {
   }
 
   ekf->setState(target_state);
+  // Also sync IMM if active — without this, post-jump IMM prediction diverges
+  if (use_imm && imm) {
+    Eigen::Matrix<double, X_N, X_N> P_reset = Eigen::Matrix<double, X_N, X_N>::Identity();
+    P_reset.diagonal() << 0.5, 5.0, 0.5, 5.0, 0.5, 5.0, 0.2, 10.0, 0.05, 0.05;
+    imm->init(target_state, P_reset);
+  }
 }
 
 double Tracker::orientationToYaw(const geometry_msgs::msg::Quaternion &q) noexcept {

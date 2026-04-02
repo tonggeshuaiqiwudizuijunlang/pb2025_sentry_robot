@@ -23,14 +23,33 @@ ament_auto_find_build_dependencies()
 ## Build ##
 ###########
 
+# ─── Project sources ──────────────────────────────────────────────────
+set(ARMOR_SOLVER_SRCS
+  src/armor_solver.cpp
+  src/armor_solver_node.cpp
+  src/armor_tracker.cpp
+  src/imm_tracker.cpp
+  src/tinympc/admm.cpp
+  src/tinympc/codegen.cpp
+  src/tinympc/rho_benchmark.cpp
+  src/tinympc/tiny_api.cpp
+)
+
 ament_auto_add_library(${PROJECT_NAME} SHARED
-  DIRECTORY src
+  ${ARMOR_SOLVER_SRCS}
+)
+
+# Resolve #include from src
+target_include_directories(${PROJECT_NAME} PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 rclcpp_components_register_node(${PROJECT_NAME}
   PLUGIN fyt::auto_aim::ArmorSolverNode
   EXECUTABLE ${PROJECT_NAME}_node
 )
+
+
 
 #############
 ## Testing ##

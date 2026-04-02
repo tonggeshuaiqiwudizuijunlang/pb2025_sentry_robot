@@ -10,6 +10,7 @@
 
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <std_srvs/srv/trigger.hpp>
 
 #include "li_initialization.h"
 
@@ -29,6 +30,7 @@ bool init_map = false, flg_first_scan = true;
 double match_time = 0, solve_time = 0, propag_time = 0, update_time = 0;
 
 bool flg_reset = false, flg_exit = false;
+bool save_pcd_requested = false;
 
 //surf feature in map
 PointCloudXYZI::Ptr feats_undistort(new PointCloudXYZI());
@@ -390,6 +392,17 @@ int main(int argc, char ** argv)
     nh->create_publisher<nav_msgs::msg::Odometry>("aft_mapped_to_init", 20);
   auto pub_path = nh->create_publisher<nav_msgs::msg::Path>("path", 20);
   auto tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(nh);
+
+  // [YQ3V3] save_pcd Service: call this service to trigger PCD save without killing the node
+  auto save_pcd_service = nh->create_service<std_srvs::srv::Trigger>(
+    "save_pcd",
+    [](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+       std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+      save_pcd_requested = true;
+      response->success = true;
+      response->message = "[YQ3V3] PCD save request received, writing to disk...";
+      RCLCPP_INFO(rclcpp::get_logger("laserMapping"), "\033[92m[YQ3V3] save_pcd service called!\033[0m");
+    });
 
   //------------------------------------------------------------------------------------------------------
   signal(SIGINT, SigHandle);
@@ -1023,6 +1036,20 @@ int main(int argc, char ** argv)
           }
         }
         dump_lio_state_to_log(fp);
+      }
+    }
+    // [YQ3V3] Check if save was requested via service
+    if (save_pcd_requested) {
+      save_pcd_requested = false;
+      if (!pcl_wait_save->empty()) {
+        string file_name = string("scans.pcd");
+        string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
+        pcl::PCDWriter pcd_writer;
+        RCLCPP_INFO(LOGGER, "\033[92m[YQ3V3] Saving PCD to: %s\033[0m", all_points_dir.c_str());
+        pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+        RCLCPP_INFO(LOGGER, "\033[92m[YQ3V3] PCD saved successfully!\033[0m");
+      } else {
+        RCLCPP_WARN(LOGGER, "[YQ3V3] save_pcd called but pcl_wait_save is empty!");
       }
     }
     rate.sleep();

@@ -1,0 +1,5 @@
+38c8012 HEAD@{0}: commit: fix: change gimbal_link TF parent from odom to base_footprint to eliminate big_yaw_imu drift in navigation odometry
+ce0361b HEAD@{1}: commit: chore: snapshot before gimbal TF fix - pre-modification state
+95e505b HEAD@{2}: reset: moving to 95e505b
+e5af8d2 HEAD@{3}: reset: moving to HEAD
+e5af8d2 HEAD@{4}: clone: from https://github.com/SMBU-PolarBear-Robotics-Team/standard_robot_pp_ros2.git

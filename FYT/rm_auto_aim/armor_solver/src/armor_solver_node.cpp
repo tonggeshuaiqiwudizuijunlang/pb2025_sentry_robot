@@ -91,11 +91,15 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions &options)
   r_yaw_ = declare_parameter("ekf.r_yaw", 0.02);
   auto u_r = [this](const Eigen::Matrix<double, Z_N, 1> &z) {
     Eigen::Matrix<double, Z_N, Z_N> r;
+    // Use the true 2D distance (xy-plane) as the adaptive scale factor.
+    // This avoids the square-wave bug where |z[0]| collapses near zero
+    // when the spinning armor faces sideways, causing K to spike.
+    double dist = std::max(std::sqrt(z[0]*z[0] + z[1]*z[1]), 0.1);
     // clang-format off
-    r << r_x_ * std::abs(z[0]), 0, 0, 0,
-         0, r_y_ * std::abs(z[1]), 0, 0,
-         0, 0, r_z_ * std::abs(z[2]), 0,
-         0, 0, 0, r_yaw_;
+    r << r_x_ * dist, 0,          0,          0,
+         0,           r_y_ * dist, 0,          0,
+         0,           0,           r_z_ * dist, 0,
+         0,           0,           0,           r_yaw_;
     // clang-format on
     return r;
   };
@@ -103,6 +107,55 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions &options)
   Eigen::DiagonalMatrix<double, X_N> p0;
   p0.setIdentity();
   tracker_->ekf = std::make_unique<RobotStateEKF>(f, h, u_q, u_r, p0);
+
+  // ---- IMM Tracker Setup ----
+  use_imm_ = declare_parameter("imm.enable", true);
+  if (use_imm_) {
+    // Markov transition probability matrix (row i → col j)
+    // Rows: from model [CV, CA, CTRV]
+    // Cols: to model   [CV, CA, CTRV]
+    // High diagonal → stay in current model; off-diagonal → allow switching
+    double p_stay_cv   = declare_parameter("imm.p_stay_cv",   0.90);
+    double p_stay_ca   = declare_parameter("imm.p_stay_ca",   0.85);
+    double p_stay_ctrv = declare_parameter("imm.p_stay_ctrv", 0.92);
+    double p_cv_ca     = (1.0 - p_stay_cv)   / 2.0;
+    double p_ca_cv     = (1.0 - p_stay_ca)   / 2.0;
+    double p_ctrv_cv   = (1.0 - p_stay_ctrv) / 2.0;
+
+    Eigen::Matrix<double, IMMTracker::NUM_MODELS, IMMTracker::NUM_MODELS> pi;
+    //          CV            CA            CTRV
+    pi << p_stay_cv,  p_cv_ca,    p_cv_ca,     // from CV
+          p_ca_cv,   p_stay_ca,  p_ca_cv,     // from CA
+          p_ctrv_cv, p_ctrv_cv,  p_stay_ctrv; // from CTRV
+
+    double sage_b0 = declare_parameter("imm.sage_husa_b0", 0.96);
+    tracker_->imm = std::make_unique<IMMTracker>(pi, sage_b0);
+
+    // Propagate noise parameters to IMM
+    double imm_ca_factor = declare_parameter("imm.ca_noise_factor", 5.0);
+    tracker_->imm->setNoiseParams(
+      s2qx_, s2qz_, s2qyaw_, s2qr_, imm_ca_factor, r_x_, r_yaw_);
+
+    tracker_->use_imm = true;
+    FYT_INFO("armor_solver", "IMM tracker enabled (CV|CA|CTRV)");
+  } else {
+    tracker_->use_imm = false;
+    FYT_INFO("armor_solver", "IMM tracker disabled, using legacy EKF");
+  }
+
+  // ---- 4-state Auto-Aim FSM parameters (ported from wust_vision VeryAimer) ----
+  aim_fsm_.single_whole_up   = declare_parameter("aim_fsm.single_whole_up",   3.0);
+  aim_fsm_.single_whole_down = declare_parameter("aim_fsm.single_whole_down", 2.0);
+  aim_fsm_.whole_pair_up     = declare_parameter("aim_fsm.whole_pair_up",     5.0);
+  aim_fsm_.whole_pair_down   = declare_parameter("aim_fsm.whole_pair_down",   4.0);
+  aim_fsm_.pair_center_up    = declare_parameter("aim_fsm.pair_center_up",    8.0);
+  aim_fsm_.pair_center_down  = declare_parameter("aim_fsm.pair_center_down",  6.0);
+  aim_fsm_.transfer_thresh   = declare_parameter("aim_fsm.transfer_thresh",   3);
+  FYT_INFO("armor_solver",
+    "AutoAimFSM thresholds: single_whole={}/{} whole_pair={}/{} pair_center={}/{}",
+    aim_fsm_.single_whole_up, aim_fsm_.single_whole_down,
+    aim_fsm_.whole_pair_up,   aim_fsm_.whole_pair_down,
+    aim_fsm_.pair_center_up,  aim_fsm_.pair_center_down);
 
   // Subscriber with tf2 message_filter
   // tf2 relevant
@@ -119,7 +172,7 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions &options)
   tf2_filter_ = std::make_shared<tf2_filter>(armors_sub_,
                                              *tf2_buffer_,
                                              target_frame_,
-                                             10,
+                                             50,
                                              this->get_node_logging_interface(),
                                              this->get_node_clock_interface(),
                                              std::chrono::duration<int>(1));
@@ -182,7 +235,7 @@ void ArmorSolverNode::timerCallback() {
 
   if (armor_target_.tracking) {
     try {
-      control_msg = solver_->solve(armor_target_, this->now(), tf2_buffer_);
+      control_msg = solver_->solve(armor_target_, this->now(), tf2_buffer_, aim_fsm_.state);
     } catch (...) {
       FYT_ERROR("armor_solver", "Something went wrong in solver!");
       control_msg.yaw_diff = 0;
@@ -289,14 +342,34 @@ void ArmorSolverNode::armorsCallback(const rm_interfaces::msg::Armors::SharedPtr
   // Update tracker
   if (tracker_->tracker_state == Tracker::LOST) {
     tracker_->init(armors_msg);
+    // Initialize IMM with the SAME armor that init() selected as tracked_armor
+    // CRITICAL: must NOT use armors_msg->armors[0] — it may be a different armor
+    if (tracker_->use_imm && tracker_->imm && !tracker_->tracked_id.empty()) {
+      tracker_->initIMM(tracker_->tracked_armor);
+    }
     target_msg.tracking = false;
+
   } else {
     dt_ = (time - last_time_).seconds();
     tracker_->lost_thres = std::abs(static_cast<int>(lost_time_thres_ / dt_));
     if (tracker_->tracked_id == "outpost") {
       tracker_->ekf->setPredictFunc(Predict{dt_, MotionModel::CONSTANT_ROTATION});
+      // Outpost: disable IMM (it spins uniformly, EKF model is sufficient)
+      tracker_->use_imm = false;
     } else {
       tracker_->ekf->setPredictFunc(Predict{dt_, MotionModel::CONSTANT_VEL_ROT});
+      tracker_->use_imm = use_imm_ && (tracker_->imm != nullptr);
+    }
+
+    // IMM: run predict step with current dt before tracker update
+    if (tracker_->use_imm && tracker_->imm) {
+      tracker_->imm->predict(dt_);
+      FYT_DEBUG("armor_solver",
+        "IMM model probs [CV={:.2f} CA={:.2f} CTRV={:.2f}] spin={}",
+        tracker_->getModelProbs()[0],
+        tracker_->getModelProbs()[1],
+        tracker_->getModelProbs()[2],
+        tracker_->imm->isSpinning());
     }
     tracker_->update(armors_msg);
     // Publish measurement
@@ -308,6 +381,8 @@ void ArmorSolverNode::armorsCallback(const rm_interfaces::msg::Armors::SharedPtr
 
     if (tracker_->tracker_state == Tracker::DETECTING) {
       target_msg.tracking = false;
+      // Reset FSM when detector loses the target
+      aim_fsm_.update(0.0, false);
     } else if (tracker_->tracker_state == Tracker::TRACKING ||
                tracker_->tracker_state == Tracker::TEMP_LOST) {
       target_msg.tracking = true;
@@ -327,6 +402,28 @@ void ArmorSolverNode::armorsCallback(const rm_interfaces::msg::Armors::SharedPtr
       target_msg.radius_2 = tracker_->another_r;
       target_msg.d_zc = state(9);
       target_msg.d_za = tracker_->d_za;
+
+      // ── Update 4-state FSM ─────────────────────────────────────────────
+      // Detect robot switch: reset FSM when we start tracking a new robot
+      const bool target_jumped = (last_tracked_id_ != tracker_->tracked_id);
+      if (target_jumped) {
+        aim_fsm_ = AutoAimFsmController{};  // reset to SINGLE
+        // Re-apply FSM parameters from node params
+        aim_fsm_.single_whole_up   = get_parameter("aim_fsm.single_whole_up").as_double();
+        aim_fsm_.single_whole_down = get_parameter("aim_fsm.single_whole_down").as_double();
+        aim_fsm_.whole_pair_up     = get_parameter("aim_fsm.whole_pair_up").as_double();
+        aim_fsm_.whole_pair_down   = get_parameter("aim_fsm.whole_pair_down").as_double();
+        aim_fsm_.pair_center_up    = get_parameter("aim_fsm.pair_center_up").as_double();
+        aim_fsm_.pair_center_down  = get_parameter("aim_fsm.pair_center_down").as_double();
+        aim_fsm_.transfer_thresh   = get_parameter("aim_fsm.transfer_thresh").as_int();
+        FYT_INFO("armor_solver", "Target switched {} -> {}, FSM reset to SINGLE",
+          last_tracked_id_, tracker_->tracked_id);
+      }
+      last_tracked_id_ = tracker_->tracked_id;
+      aim_fsm_.update(state(7), !target_jumped);  // state(7) = v_yaw
+      FYT_DEBUG("armor_solver", "AutoAimFSM state: {}",
+        autoAimFsmToString(aim_fsm_.state));
+      // ──────────────────────────────────────────────────────────────────
     }
   }
 

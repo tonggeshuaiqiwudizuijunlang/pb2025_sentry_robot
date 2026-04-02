@@ -52,6 +52,7 @@ find_package(tf2_ros REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(glog REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(OpenMP QUIET)
 find_package(PythonLibs REQUIRED) # Consider using Pybind11 for ROS2
 find_path(MATPLOTLIB_CPP_INCLUDE_DIRS "matplotlibcpp.h")
@@ -94,6 +95,7 @@ ament_target_dependencies(pointlio_mapping
   pcl_conversions
   tf2_ros
   livox_ros_driver2
+  std_srvs
 )
 
 target_link_libraries(pointlio_mapping ${PCL_LIBRARIES} ${PYTHON_LIBRARIES})

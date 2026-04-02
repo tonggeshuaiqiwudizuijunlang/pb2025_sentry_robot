@@ -1,0 +1,108 @@
+/**:
+  ros__parameters:
+
+    debug: true
+    target_frame: odom
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Tracker
+    # ──────────────────────────────────────────────────────────────────────
+    tracker:
+      max_match_distance: 0.2
+      max_match_yaw_diff: 1.0
+      tracking_thres: 5
+      lost_time_thres: 0.3
+
+    # ──────────────────────────────────────────────────────────────────────
+    # EKF noise
+    # ──────────────────────────────────────────────────────────────────────
+    ekf:
+      sigma2_q_x:   20.0
+      sigma2_q_y:   20.0
+      sigma2_q_z:   20.0
+      sigma2_q_yaw: 100.0
+      sigma2_q_r:   800.0
+      sigma2_q_d_zc: 800.0
+      r_x:   0.05
+      r_y:   0.05
+      r_z:   0.05
+      r_yaw: 0.02
+
+    # ──────────────────────────────────────────────────────────────────────
+    # IMM Tracker (CV | CA | CTRV)
+    # ──────────────────────────────────────────────────────────────────────
+    imm:
+      enable: true
+      p_stay_cv:   0.90
+      p_stay_ca:   0.85
+      p_stay_ctrv: 0.92
+      sage_husa_b0: 0.96
+      ca_noise_factor: 5.0
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 4-State Auto-Aim FSM  (ported from wust_vision VeryAimer)
+    #
+    # v_yaw thresholds [rad/s] for state transitions:
+    #
+    #  SINGLE ──(>single_whole_up)──► WHOLE_ARMOR ──(>whole_pair_up)──► WHOLE_PAIR ──(>pair_center_up)──► CENTER
+    #         ◄──(<single_whole_down)──             ◄──(<whole_pair_down)──          ◄──(<pair_center_down)──
+    # ──────────────────────────────────────────────────────────────────────
+    aim_fsm:
+      single_whole_up:   3.0    # rad/s - enter WHOLE_ARMOR when |v_yaw| > this
+      single_whole_down: 2.0    # rad/s - back to SINGLE when |v_yaw| < this
+      whole_pair_up:     5.0    # rad/s - enter WHOLE_PAIR
+      whole_pair_down:   4.0    # rad/s - back to WHOLE_ARMOR
+      pair_center_up:    8.0    # rad/s - enter CENTER (aim car center)
+      pair_center_down:  6.0    # rad/s - back to WHOLE_PAIR
+      transfer_thresh:   3      # consecutive frames needed to trigger transition
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Solver
+    # ──────────────────────────────────────────────────────────────────────
+    solver:
+      compensator_type: ideal      # "ideal" | "linear_drag" | "g1" | "g2"
+      bullet_speed:     28.0       # m/s  — update to actual bullet speed
+      gravity:          9.8        # m/s^2
+      resistance:       0.001      # air drag coefficient
+      iteration_times:  20         # trajectory compensation iterations
+
+      prediction_delay:       0.0  # s  — additional prediction delay
+      controller_delay:       0.0  # s  — controller execution latency
+      yaw_prediction_scale:   0.6  # scale factor on v_yaw for prediction
+      max_tracking_v_yaw:     6.0  # rad/s — legacy 2-state tracking switch threshold
+
+      shooting_range_width:   0.13 # m  — armor half-width for fire-enable check
+      shooting_range_height:  0.13 # m  — armor half-height for fire-enable check
+
+      side_angle:           15.0   # deg — legacy armor-switch hysteresis angle
+      min_switching_v_yaw:   1.0   # rad/s — no switch when |v_yaw| < this
+
+      # FSM armor selection angles (deg) — used by selectArmorFsm()
+      coming_angle_deg:  60.0      # armor is "incoming" within this cone
+      leaving_angle_deg: 45.0      # armor exit hysteresis threshold
+
+      #
+      # Manual angle offset table (distance,height → Δpitch,Δyaw)
+      # Format: "<d_min>,<d_max>,<h_min>,<h_max>,<pitch_off>,<yaw_off>"
+      # Leave empty if not calibrated:
+      #
+      angle_offset: []
+
+      # ──────────────────────────────────────────────────────────────────
+      # TinyMPC gimbal trajectory smoother
+      #
+      # Set enable_mpc: true to activate.  The MPC overrides the raw
+      # yaw/pitch command with a smooth acceleration-constrained trajectory.
+      # State: x = [position, velocity]   Input: u = [acceleration]
+      # Modelled as a double-integrator per axis (yaw and pitch independently).
+      # ──────────────────────────────────────────────────────────────────
+      enable_mpc:       false     # true to enable TinyMPC smoothing
+
+      mpc_horizon:      20        # prediction horizon (control steps)
+      mpc_dt:           0.005     # time step [s]  (≈200 Hz)
+      mpc_q_pos:        100.0     # position tracking weight  Q[0]
+      mpc_q_vel:        1.0       # velocity damping weight   Q[1]
+      mpc_r_acc:        0.01      # control effort weight     R
+      mpc_rho:          1.0       # ADMM penalty parameter
+      mpc_max_acc_yaw:  60.0      # max yaw  acceleration [rad/s^2]
+      mpc_max_acc_pitch: 40.0     # max pitch acceleration [rad/s^2]

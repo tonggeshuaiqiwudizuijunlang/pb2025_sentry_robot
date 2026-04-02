@@ -1,0 +1,5 @@
+3a786d1 HEAD@{0}: reset: moving to HEAD
+3a786d1 HEAD@{1}: commit: Cleanup armor_solver and fix array bug
+dae7547 HEAD@{2}: reset: moving to HEAD
+dae7547 HEAD@{3}: reset: moving to HEAD
+dae7547 HEAD@{4}: clone: from https://github.com/CSU-FYT-Vision/FYT2024_vision.git

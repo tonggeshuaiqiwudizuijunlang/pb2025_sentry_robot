@@ -8,5 +8,6 @@
     offsetX: 0
     offsetY: 0
     camera_name: "hik"
+    frame_id: "vision_camera_optical_frame"
     recording: false    #是否录制
      

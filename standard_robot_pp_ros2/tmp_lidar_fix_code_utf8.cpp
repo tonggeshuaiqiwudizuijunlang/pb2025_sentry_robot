@@ -1,4 +1,4 @@
-// Copyright 2025 SMBU-PolarBear-Robotics-Team
+﻿// Copyright 2025 SMBU-PolarBear-Robotics-Team
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -42,17 +42,17 @@ StandardRobotPpRos2Node::StandardRobotPpRos2Node(const rclcpp::NodeOptions & opt
   createSubscription();
 
   robot_models_.chassis = {
-    {0, "无底盘"}, {1, "麦轮底盘"}, {2, "全向轮底盘"}, {3, "舵轮底盘"}, {4, "平衡底盘"}};
-  robot_models_.gimbal = {{0, "无云台"}, {1, "yaw_pitch直连云台"}};
-  robot_models_.shoot = {{0, "无发射机构"}, {1, "摩擦轮+拨弹盘"}, {2, "气动+拨弹盘"}};
-  robot_models_.arm = {{0, "无机械臂"}, {1, "mini机械臂"}};
-  robot_models_.custom_controller = {{0, "无自定义控制器"}, {1, "mini自定义控制器"}};
+    {0, "鏃犲簳鐩?}, {1, "楹﹁疆搴曠洏"}, {2, "鍏ㄥ悜杞簳鐩?}, {3, "鑸佃疆搴曠洏"}, {4, "骞宠　搴曠洏"}};
+  robot_models_.gimbal = {{0, "鏃犱簯鍙?}, {1, "yaw_pitch鐩磋繛浜戝彴"}};
+  robot_models_.shoot = {{0, "鏃犲彂灏勬満鏋?}, {1, "鎽╂摝杞?鎷ㄥ脊鐩?}, {2, "姘斿姩+鎷ㄥ脊鐩?}};
+  robot_models_.arm = {{0, "鏃犳満姊拌噦"}, {1, "mini鏈烘鑷?}};
+  robot_models_.custom_controller = {{0, "鏃犺嚜瀹氫箟鎺у埗鍣?}, {1, "mini鑷畾涔夋帶鍒跺櫒"}};
 
   serial_port_protect_thread_ = std::thread(&StandardRobotPpRos2Node::serialPortProtect, this);
   receive_thread_ = std::thread(&StandardRobotPpRos2Node::receiveData, this);
   send_thread_ = std::thread(&StandardRobotPpRos2Node::sendData, this);
 
-  last_hp_ = 600.0;  // 初始血量，防止启动时误触发掉血逻辑
+  last_hp_ = 600.0;  // 鍒濆琛€閲忥紝闃叉鍚姩鏃惰瑙﹀彂鎺夎閫昏緫
 }
 
 StandardRobotPpRos2Node::~StandardRobotPpRos2Node()
@@ -124,27 +124,25 @@ void StandardRobotPpRos2Node::createSubscription()
     std::bind(&StandardRobotPpRos2Node::cmdGimbalJointCallback, this, std::placeholders::_1));
 
 
-  // 目标跟踪订阅：使用 rm_interfaces::msg::Target，匹配头文件声明
+  // 鐩爣璺熻釜璁㈤槄锛氫娇鐢?rm_interfaces::msg::Target锛屽尮閰嶅ご鏂囦欢澹版槑
   cmd_tracking_sub_ = this->create_subscription<rm_interfaces::msg::Target>(
     "/armor_solver/target", rclcpp::SensorDataQoS(),
     std::bind(&StandardRobotPpRos2Node::visionTargetCallback, this, std::placeholders::_1));
 
-  // 新增：订阅 armor_solver 发来的 gimbal 命令
+  // 鏂板锛氳闃?armor_solver 鍙戞潵鐨?gimbal 鍛戒护
   gimbal_cmd_sub_ = this->create_subscription<rm_interfaces::msg::GimbalCmd>(
     "/armor_solver/cmd_gimbal", rclcpp::SensorDataQoS(),
     std::bind(&StandardRobotPpRos2Node::cmdGimbalCmdCallback, this, std::placeholders::_1));
 
-  // 新增：订阅来自行为树的姿态指令
-  cmd_posture_sub_ = this->create_subscription<example_interfaces::msg::UInt8>(
+  // 鏂板锛氳闃呮潵鑷涓烘爲鐨勫Э鎬佹寚浠?  cmd_posture_sub_ = this->create_subscription<example_interfaces::msg::UInt8>(
     "cmd_posture", 10,
     std::bind(&StandardRobotPpRos2Node::cmdPostureCallback, this, std::placeholders::_1));
 
-  // 新增：订阅来自行为树的小陀螺转速指令
-  cmd_spin_sub_ = this->create_subscription<example_interfaces::msg::Float32>(
+  // 鏂板锛氳闃呮潵鑷涓烘爲鐨勫皬闄€铻鸿浆閫熸寚浠?  cmd_spin_sub_ = this->create_subscription<example_interfaces::msg::Float32>(
     "cmd_spin", 10,
     std::bind(&StandardRobotPpRos2Node::cmdSpinCallback, this, std::placeholders::_1));
 
-  // 新增：订阅来自行为树的底盘模式指令 (0=失能, 1=自由, 2=跟随, 3=小陀螺)
+  // 鏂板锛氳闃呮潵鑷涓烘爲鐨勫簳鐩樻ā寮忔寚浠?(0=澶辫兘, 1=鑷敱, 2=璺熼殢, 3=灏忛檧铻?
   cmd_chassis_mode_sub_ = this->create_subscription<example_interfaces::msg::UInt8>(
     "cmd_chassis_mode", 10,
     std::bind(&StandardRobotPpRos2Node::cmdChassisModeCallback, this, std::placeholders::_1));
@@ -242,11 +240,10 @@ void StandardRobotPpRos2Node::serialPortProtect()
 {
   RCLCPP_INFO(get_logger(), "Start serialPortProtect!");
 
-  // @TODO: 1.保持串口连接 2.串口断开重连 3.串口异常处理
+  // @TODO: 1.淇濇寔涓插彛杩炴帴 2.涓插彛鏂紑閲嶈繛 3.涓插彛寮傚父澶勭悊
 
-  // 初始化串口
-  serial_driver_->init_port(device_name_, *device_config_);
-  // 尝试打开串口
+  // 鍒濆鍖栦覆鍙?  serial_driver_->init_port(device_name_, *device_config_);
+  // 灏濊瘯鎵撳紑涓插彛
   try {
     if (!serial_driver_->port()->is_open()) {
       serial_driver_->port()->open();
@@ -318,11 +315,10 @@ void StandardRobotPpRos2Node::receiveData()
       // Reset sof_count when SOF_RECEIVE is found
       sof_count = 0;
 
-      // sof[0] == SOF_RECEIVE 后读取剩余 header_frame 内容
-      std::vector<uint8_t> header_frame_buf(2);  // sof 在读取完数据后添加
-
-      serial_driver_->port()->receive(header_frame_buf);  // 读取除 sof 外剩下的数据
-      header_frame_buf.insert(header_frame_buf.begin(), sof[0]);  // 添加 sof
+      // sof[0] == SOF_RECEIVE 鍚庤鍙栧墿浣?header_frame 鍐呭
+      std::vector<uint8_t> header_frame_buf(2);  // sof 鍦ㄨ鍙栧畬鏁版嵁鍚庢坊鍔?
+      serial_driver_->port()->receive(header_frame_buf);  // 璇诲彇闄?sof 澶栧墿涓嬬殑鏁版嵁
+      header_frame_buf.insert(header_frame_buf.begin(), sof[0]);  // 娣诲姞 sof
       HeaderFrame header_frame = fromVector<HeaderFrame>(header_frame_buf);
 
       // // HeaderFrame CRC8 check
@@ -333,16 +329,14 @@ void StandardRobotPpRos2Node::receiveData()
       //   continue;
       // }
 
-      // 移除crc
-      // crc8_ok 校验正确后读取数据段
-      // 根据数据段长度读取数据
-      std::vector<uint8_t> data_buf(header_frame.len + 2);  // len + crc
+      // 绉婚櫎crc
+      // crc8_ok 鏍￠獙姝ｇ‘鍚庤鍙栨暟鎹
+      // 鏍规嵁鏁版嵁娈甸暱搴﹁鍙栨暟鎹?      std::vector<uint8_t> data_buf(header_frame.len + 2);  // len + crc
       int received_len = serial_driver_->port()->receive(data_buf);
       int received_len_sum = received_len;
-      // 考虑到一次性读取数据可能存在数据量过大，读取不完整的情况。需要检测是否读取完整
-      // 计算剩余未读取的数据长度
+      // 鑰冭檻鍒颁竴娆℃€ц鍙栨暟鎹彲鑳藉瓨鍦ㄦ暟鎹噺杩囧ぇ锛岃鍙栦笉瀹屾暣鐨勬儏鍐点€傞渶瑕佹娴嬫槸鍚﹁鍙栧畬鏁?      // 璁＄畻鍓╀綑鏈鍙栫殑鏁版嵁闀垮害
       int remain_len = header_frame.len + 2 - received_len;
-      while (remain_len > 0) {  // 读取剩余未读取的数据
+      while (remain_len > 0) {  // 璇诲彇鍓╀綑鏈鍙栫殑鏁版嵁
         std::vector<uint8_t> remain_buf(remain_len);
         received_len = serial_driver_->port()->receive(remain_buf);
         data_buf.insert(data_buf.begin() + received_len_sum, remain_buf.begin(), remain_buf.end());
@@ -350,14 +344,14 @@ void StandardRobotPpRos2Node::receiveData()
         remain_len -= received_len;
       }
 
-      // 数据段读取完成后添加 header_frame_buf 到 data_buf，得到完整数据包
+      // 鏁版嵁娈佃鍙栧畬鎴愬悗娣诲姞 header_frame_buf 鍒?data_buf锛屽緱鍒板畬鏁存暟鎹寘
       data_buf.insert(data_buf.begin(), header_frame_buf.begin(), header_frame_buf.end());
 
       if (!debug_ && header_frame.id == ID_DEBUG) {
         continue;
       }
 
-      // 整包数据校验
+      // 鏁村寘鏁版嵁鏍￠獙
       //bool crc16_ok = crc16::verify_CRC16_check_sum(data_buf);
       bool double_check_ok = crc16::verify_Double_check(data_buf);
       
@@ -379,7 +373,7 @@ void StandardRobotPpRos2Node::receiveData()
         continue;
       }
 
-      // crc16_ok 校验正确后根据 header_frame.id 解析数据
+      // crc16_ok 鏍￠獙姝ｇ‘鍚庢牴鎹?header_frame.id 瑙ｆ瀽鏁版嵁
       switch (header_frame.id) {
         case ID_DEBUG: {
           ReceiveDebugData debug_data = fromVector<ReceiveDebugData>(data_buf);
@@ -562,8 +556,7 @@ void StandardRobotPpRos2Node::Decode_YQ_Data(Receive_YQ_Serial_State & yq_serial
   robot_status_msg.remaining_gold_coin = yq_serial_data.data.gold_remaining;
   robot_status_msg.posture = yq_serial_data.data.posture;
 
-  // 掉血检测
-  if (last_hp_ - robot_status_msg.current_hp > 0) {
+  // 鎺夎妫€娴?  if (last_hp_ - robot_status_msg.current_hp > 0) {
     robot_status_msg.is_hp_deduced = true;
   } else {
     robot_status_msg.is_hp_deduced = false;
@@ -571,10 +564,9 @@ void StandardRobotPpRos2Node::Decode_YQ_Data(Receive_YQ_Serial_State & yq_serial
   last_hp_ = robot_status_msg.current_hp;
   robot_status_pub_->publish(robot_status_msg);
 
-  // ── 热量安全 flag 更新 ──────────────────────────────────────────────
-  // 每帧计算一次，供 cmdShootCallback 使用
-  // 热量上限为 0 时（数据未初始化）默认安全
-  const uint32_t heat_limit = yq_serial_data.data.heat_limit;
+  // 鈹€鈹€ 鐑噺瀹夊叏 flag 鏇存柊 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+  // 姣忓抚璁＄畻涓€娆★紝渚?cmdShootCallback 浣跨敤
+  // 鐑噺涓婇檺涓?0 鏃讹紙鏁版嵁鏈垵濮嬪寲锛夐粯璁ゅ畨鍏?  const uint32_t heat_limit = yq_serial_data.data.heat_limit;
   const uint32_t current_heat = static_cast<uint32_t>(yq_serial_data.data.current_heat);
   if (heat_limit == 0) {
     heat_safe_.store(true);
@@ -582,8 +574,7 @@ void StandardRobotPpRos2Node::Decode_YQ_Data(Receive_YQ_Serial_State & yq_serial
     heat_safe_.store(current_heat < heat_limit * static_cast<uint32_t>(heat_ratio_) / 100u);
   }
 
-  // RFID 状态映射
-  pb_rm_interfaces::msg::RfidStatus rfid_msg;
+  // RFID 鐘舵€佹槧灏?  pb_rm_interfaces::msg::RfidStatus rfid_msg;
   uint32_t rfid = yq_serial_data.data.rfid_status;
   rfid_msg.base_gain_point = (rfid >> 0) & 0x01;
   rfid_msg.central_highland_gain_point = (rfid >> 1) & 0x01;
@@ -688,60 +679,6 @@ void StandardRobotPpRos2Node::Decode_YQ_Data(Receive_YQ_Serial_State & yq_serial
   q1.normalize();
   t.transform.rotation = tf2::toMsg(q1);
   tf_broadcaster_->sendTransform(t);
-
-  // ============================================================================
-  // [Method A] Independent IMU-driven TF tree for vision system — single layer
-  //
-  // Architecture mirrors the old "odom → gimbal_link" design (commit dae7547):
-  //   imu_world → vision_camera_link  (single quaternion = full absolute RPY)
-  //   vision_camera_link → vision_camera_optical_frame  (fixed optical rotation)
-  //
-  // Why single layer?
-  //   The old design stored roll/pitch/yaw in ONE quaternion on gimbal_link, so
-  //   getRPY() in armor_solver directly recovered the motor absolute angles.
-  //   Splitting into 3 layers (chassis_yaw ⊗ relative_yaw ⊗ pitch) causes
-  //   getRPY on the composed quaternion to produce coupled values ≠ motor angles,
-  //   leading to systematic solver bias and violent barrel swings on mode enable.
-  //
-  // Translation: 0,0,0 — solver assumes gimbal pivot is at origin.
-  //   Including physical offsets (e.g. z=0.43m) would make atan2(z, dist) wrong.
-  // ============================================================================
-
-  // We only use the encoder-relative gimbal yaw, ignoring chassis IMU yaw
-  // This ensures the solver's target orientation is directly in the motor's coordinate system.
-  // The solver will output (motor_yaw + yaw_diff), exactly what the lower machine expects.
-  float abs_gimbal_yaw = gimbal_relative_yaw;
-
-  // Step A: imu_world → vision_camera_link (single-layer, full absolute orientation)
-  geometry_msgs::msg::TransformStamped t_vision_camera;
-  t_vision_camera.header.stamp = this->get_clock()->now();
-  t_vision_camera.header.frame_id = "imu_world";
-  t_vision_camera.child_frame_id = "vision_camera_link";
-  tf2::Quaternion q_vision;
-  // RPY: roll=0, pitch=last_gimbal_pitch_odom_joint_ (= -pitch_deg*PI/180 = absolute),
-  //      yaw=abs_gimbal_yaw (= chassis_yaw + relative_yaw = motor absolute yaw)
-  q_vision.setRPY(0.0f, last_gimbal_pitch_odom_joint_, abs_gimbal_yaw);
-  q_vision.normalize();
-  t_vision_camera.transform.rotation = tf2::toMsg(q_vision);
-  t_vision_camera.transform.translation.x = 0.0;
-  t_vision_camera.transform.translation.y = 0.0;
-  t_vision_camera.transform.translation.z = 0.0;
-  tf_broadcaster_->sendTransform(t_vision_camera);
-
-  // Step B: vision_camera_link → vision_camera_optical_frame (fixed optical rotation)
-  // Optical frame convention: z-forward, x-right, y-down
-  geometry_msgs::msg::TransformStamped t_camera_optical;
-  t_camera_optical.header.stamp = this->get_clock()->now();
-  t_camera_optical.header.frame_id = "vision_camera_link";
-  t_camera_optical.child_frame_id = "vision_camera_optical_frame";
-  tf2::Quaternion q_opt;
-  q_opt.setRPY(-M_PI / 2, 0.0, -M_PI / 2);
-  q_opt.normalize();
-  t_camera_optical.transform.rotation = tf2::toMsg(q_opt);
-  t_camera_optical.transform.translation.x = 0.0;
-  t_camera_optical.transform.translation.y = 0.0;
-  t_camera_optical.transform.translation.z = 0.0;
-  tf_broadcaster_->sendTransform(t_camera_optical);
 
   // Note: chassis_real_vx/vy/wz moved to Judge System/Reserved fields. 
   // Disabling velocity publication from YQ data as fields are removed.
@@ -983,18 +920,17 @@ void StandardRobotPpRos2Node::sendData()
   send_robot_cmd_data_.data.speed_vector.vx = 0;
   send_robot_cmd_data_.data.speed_vector.vy = 0;
   send_robot_cmd_data_.data.speed_vector.wz = 0;
-  send_robot_cmd_data_.data.chassis.posture = 0;      // 默认姿态：移动
-  send_robot_cmd_data_.data.chassis.chassis_mode = 1;  // 默认底盘：自由模式
-  send_robot_cmd_data_.data.chassis.reserved2 = 255;
+  send_robot_cmd_data_.data.chassis.posture = 0;      // 榛樿濮挎€侊細绉诲姩
+  send_robot_cmd_data_.data.chassis.chassis_mode = 1;  // 榛樿搴曠洏锛氳嚜鐢辨ā寮?  send_robot_cmd_data_.data.chassis.reserved2 = 255;
   send_robot_cmd_data_.data.chassis.reserved3 = 255;
   send_robot_cmd_data_.data.chassis.reserved4 = 65535;
   send_robot_cmd_data_.data.chassis.reserved5 = 65535;
-  send_robot_cmd_data_.data.chassis.yaw_vel   = 0.0f;
-  send_robot_cmd_data_.data.chassis.pitch_vel = 0.0f;
-  send_robot_cmd_data_.data.chassis.yaw_acc   = 0.0f;
-  send_robot_cmd_data_.data.chassis.pitch_acc = 0.0f;
+  send_robot_cmd_data_.data.chassis.reserved6 = -1.0f;
+  send_robot_cmd_data_.data.chassis.reserved7 = -1.0f;
+  send_robot_cmd_data_.data.chassis.reserved8 = -1.0f;
+  send_robot_cmd_data_.data.chassis.reserved9 = -1.0f;
   send_robot_cmd_data_.data.tracking.tracking = false;
-  // 添加帧头crc8校验
+  // 娣诲姞甯уごcrc8鏍￠獙
   crc8::append_CRC8_check_sum(
     reinterpret_cast<uint8_t *>(&send_robot_cmd_data_), sizeof(HeaderFrame));
 
@@ -1008,17 +944,15 @@ void StandardRobotPpRos2Node::sendData()
     }
 
     try {
-      // 整包数据校验
-      // 添加数据段crc16校验
+      // 鏁村寘鏁版嵁鏍￠獙
+      // 娣诲姞鏁版嵁娈礳rc16鏍￠獙
       crc16::append_CRC16_check_sum(
         reinterpret_cast<uint8_t *>(&send_robot_cmd_data_), sizeof(SendRobotCmdData));
 
-      // 发送数据
-      std::vector<uint8_t> send_data;
+      // 鍙戦€佹暟鎹?      std::vector<uint8_t> send_data;
       {
         std::lock_guard<std::mutex> lock(cmd_mutex_);
-        // 最终守门：发送前再次检查热量安全，不安全则强制清零开火
-        if (!heat_safe_.load()) {
+        // 鏈€缁堝畧闂細鍙戦€佸墠鍐嶆妫€鏌ョ儹閲忓畨鍏紝涓嶅畨鍏ㄥ垯寮哄埗娓呴浂寮€鐏?        if (!heat_safe_.load()) {
           send_robot_cmd_data_.data.shoot.fire = 0;
         }
         send_data = toVector(send_robot_cmd_data_);
@@ -1045,8 +979,7 @@ void StandardRobotPpRos2Node::cmdGimbalJointCallback(
   const sensor_msgs::msg::JointState::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(cmd_mutex_);
-  // 如果视觉正在追踪目标，不覆盖视觉设置的云台角度
-  if (send_robot_cmd_data_.data.tracking.tracking) {
+  // 濡傛灉瑙嗚姝ｅ湪杩借釜鐩爣锛屼笉瑕嗙洊瑙嗚璁剧疆鐨勪簯鍙拌搴?  if (send_robot_cmd_data_.data.tracking.tracking) {
     return;
   }
 
@@ -1075,8 +1008,7 @@ void StandardRobotPpRos2Node::visionTargetCallback(
 
 void StandardRobotPpRos2Node::cmdShootCallback(const example_interfaces::msg::UInt8::SharedPtr msg)
 {
-  // 行为树不再插手扣扳机的过程，彻底不响应开火指令
-  (void)msg;
+  // 琛屼负鏍戜笉鍐嶆彃鎵嬫墸鎵虫満鐨勮繃绋嬶紝褰诲簳涓嶅搷搴斿紑鐏寚浠?  (void)msg;
 }
 
 void StandardRobotPpRos2Node::cmdSpinCallback(const example_interfaces::msg::Float32::SharedPtr msg)
@@ -1185,28 +1117,21 @@ bool StandardRobotPpRos2Node::callTriggerService(const std::string & service_nam
 }
 
 /********************************************************/
-/* 新增回调实现：处理来自 armor_solver 的云台命令                   */
+/* 鏂板鍥炶皟瀹炵幇锛氬鐞嗘潵鑷?armor_solver 鐨勪簯鍙板懡浠?                  */
 /********************************************************/
 void StandardRobotPpRos2Node::cmdGimbalCmdCallback(const rm_interfaces::msg::GimbalCmd::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(cmd_mutex_);
   
-  // 1. 云台目标角度（deg）
+  // 1. 鏇存柊浜戝彴鐩爣鍧愭爣
   send_robot_cmd_data_.data.gimbal.pitch = static_cast<float>(msg->pitch);
   send_robot_cmd_data_.data.gimbal.yaw   = static_cast<float>(msg->yaw);
 
-  // 2. MPC 前馈速度与加速度（武科迁移）
-  // 映射到原 reserved6/7/8/9 字段，下位机可用于 PID 前馈补偿，减少追踪滞后
-  send_robot_cmd_data_.data.chassis.yaw_vel   = static_cast<float>(msg->yaw_vel);
-  send_robot_cmd_data_.data.chassis.pitch_vel = static_cast<float>(msg->pitch_vel);
-  send_robot_cmd_data_.data.chassis.yaw_acc   = static_cast<float>(msg->yaw_acc);
-  send_robot_cmd_data_.data.chassis.pitch_acc = static_cast<float>(msg->pitch_acc);
-
-  // 3. 热量安全闸门：仅在裁判系统热量安全时透传开火建议
-  if (!heat_safe_.load()) {
-    send_robot_cmd_data_.data.shoot.fire = 0; // 过热强制停火
+  // 2. 鏍稿績鐗╃悊瀹夊叏闂搁棬閫昏緫
+  // 浠呭湪瑁佸垽绯荤粺鐑噺瀹夊叏鐨勫墠鎻愪笅锛岄€忎紶瑙嗚鐨勫紑鐏缓璁?  if (!heat_safe_.load()) {
+    send_robot_cmd_data_.data.shoot.fire = 0; // 杩囩儹寮哄埗鍋滅伀
   } else {
-    send_robot_cmd_data_.data.shoot.fire = msg->fire_advice;
+    // 鐗╃悊閫忎紶锛氳瑙夊彂澶氬皯锛岀粰搴曞眰鍙戝灏戯紙0=涓嶅彂锛?=鍗曞彂锛?=杩炲彂锛?    send_robot_cmd_data_.data.shoot.fire = msg->fire_advice;
   }
 }
 
@@ -1226,6 +1151,11 @@ void StandardRobotPpRos2Node::cmdChassisModeCallback(
   RCLCPP_INFO(get_logger(), "Received Chassis Mode: %d (0=disabled,1=free,2=follow,3=spin)", msg->data);
   send_robot_cmd_data_.data.chassis.chassis_mode = msg->data;
 }
+
+}  // namespace standard_robot_pp_ros2
+
+#include "rclcpp_components/register_node_macro.hpp"
+RCLCPP_COMPONENTS_REGISTER_NODE(standard_robot_pp_ros2::StandardRobotPpRos2Node)
 
 void StandardRobotPpRos2Node::lidarOdomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
 {

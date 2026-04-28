@@ -49,6 +49,7 @@ namespace hik_camera {
 
             // Load camera info
             camera_name_ = this->declare_parameter("camera_name", "narrow_stereo");
+            auto frame_id = this->declare_parameter("frame_id", "vision_camera_optical_frame"); // [NEW] Declare before callback
             camera_info_manager_ =
                     std::make_unique<camera_info_manager::CameraInfoManager>(this, camera_name_);
             auto camera_info_url =
@@ -63,13 +64,13 @@ namespace hik_camera {
             params_callback_handle_ = this->add_on_set_parameters_callback(
                     std::bind(&HikCameraNode::parametersCallback, this, std::placeholders::_1));
 
-            capture_thread_ = std::thread{[this]() -> void {
+            capture_thread_ = std::thread{[this, frame_id]() -> void {
                 MV_FRAME_OUT out_frame;
 
                 RCLCPP_INFO(this->get_logger(), "Publishing image!");
 
                 // prepare static fields
-                image_msg_.header.frame_id = "camera_optical_frame";
+                image_msg_.header.frame_id = frame_id;
                 image_msg_.encoding = "rgb8";
                 MV_CC_SetTriggerMode(camera_handle_, MV_TRIGGER_MODE_OFF);
 
@@ -167,8 +168,7 @@ namespace hik_camera {
                         result.reason = "Failed to set gain, status = " + std::to_string(status);
                     }
                 } else {
-                    result.successful = false;
-                    result.reason = "Unknown parameter: " + param.get_name();
+                    // Ignore other parameters like frame_id, camera_name
                 }
             }
             return result;

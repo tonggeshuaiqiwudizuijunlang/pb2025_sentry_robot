@@ -11,7 +11,7 @@ def generate_launch_description():
             output='screen',
             parameters=[
                 {'hp_low_threshold': 150},
-                {'hp_recover_threshold': 400},
+                {'hp_recover_threshold': 380},
 
                 {'origin_x': 0.0},
                 {'origin_y': 0.0},

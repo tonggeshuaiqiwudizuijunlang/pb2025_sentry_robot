@@ -116,6 +116,19 @@ def generate_launch_description():
         "log_level", default_value="info", description="log level"
     )
 
+    start_static_map2odom_node = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_transform_publisher_map2odom",
+        output="screen",
+        arguments=[
+            "--x", "0.556349", "--y", "-2.25529", "--z", "0.0",
+            "--roll", "0.0", "--pitch", "0.0", "--yaw", "-1.5708",
+            "--frame-id", "map",
+            "--child-frame-id", "odom",
+        ],
+    )
+
     start_point_lio_node = Node(
         package="point_lio",
         executable="pointlio_mapping",
@@ -143,16 +156,18 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=["--ros-args", "--log-level", log_level],
             ),
-            Node(
-                package="small_gicp_relocalization",
-                executable="small_gicp_relocalization_node",
-                name="small_gicp_relocalization",
-                output="screen",
-                respawn=use_respawn,
-                respawn_delay=2.0,
-                parameters=[configured_params, {"prior_pcd_file": prior_pcd_file}],
-                arguments=["--ros-args", "--log-level", log_level],
-            ),
+            # small_gicp_relocalization disabled: CAD-derived PCD cannot converge
+            # against real lidar scans; map->odom TF is provided by static publisher below.
+            # Node(
+            #     package="small_gicp_relocalization",
+            #     executable="small_gicp_relocalization_node",
+            #     name="small_gicp_relocalization",
+            #     output="screen",
+            #     respawn=use_respawn,
+            #     respawn_delay=2.0,
+            #     parameters=[configured_params, {"prior_pcd_file": prior_pcd_file}],
+            #     arguments=["--ros-args", "--log-level", log_level],
+            # ),
             Node(
                 package="nav2_lifecycle_manager",
                 executable="lifecycle_manager",
@@ -178,12 +193,13 @@ def generate_launch_description():
                 name="map_server",
                 parameters=[configured_params],
             ),
-            ComposableNode(
-                package="small_gicp_relocalization",
-                plugin="small_gicp_relocalization::SmallGicpRelocalizationNode",
-                name="small_gicp_relocalization",
-                parameters=[configured_params, {"prior_pcd_file": prior_pcd_file}],
-            ),
+            # small_gicp_relocalization disabled (see load_nodes comment above).
+            # ComposableNode(
+            #     package="small_gicp_relocalization",
+            #     plugin="small_gicp_relocalization::SmallGicpRelocalizationNode",
+            #     name="small_gicp_relocalization",
+            #     parameters=[configured_params, {"prior_pcd_file": prior_pcd_file}],
+            # ),
             ComposableNode(
                 package="nav2_lifecycle_manager",
                 plugin="nav2_lifecycle_manager::LifecycleManager",
@@ -219,6 +235,7 @@ def generate_launch_description():
     ld.add_action(declare_log_level_cmd)
 
     # Add the actions to launch all of the localiztion nodes
+    ld.add_action(start_static_map2odom_node)
     ld.add_action(start_point_lio_node)
     ld.add_action(load_nodes)
     ld.add_action(load_composable_nodes)

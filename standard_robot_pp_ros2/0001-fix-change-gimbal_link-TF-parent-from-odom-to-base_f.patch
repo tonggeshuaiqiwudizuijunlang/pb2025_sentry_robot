@@ -1,0 +1,93 @@
+From 38c801221f95485e934435c44866054b801fc46a Mon Sep 17 00:00:00 2001
+From: tonggeshuaiqiwudizuijunlang
+ <104890039+tonggeshuaiqiwudizuijunlang@users.noreply.github.com>
+Date: Thu, 26 Mar 2026 23:44:47 +0800
+Subject: [PATCH] fix: change gimbal_link TF parent from odom to base_footprint
+ to eliminate big_yaw_imu drift in navigation odometry
+
+---
+ src/standard_robot_pp_ros2.cpp | 68 +++++++++++++++++-----------------
+ 1 file changed, 34 insertions(+), 34 deletions(-)
+
+diff --git a/src/standard_robot_pp_ros2.cpp b/src/standard_robot_pp_ros2.cpp
+index bd6f4f1..448822e 100644
+--- a/src/standard_robot_pp_ros2.cpp
++++ b/src/standard_robot_pp_ros2.cpp
+@@ -654,40 +654,40 @@ void StandardRobotPpRos2Node::Decode_YQ_Data(Receive_YQ_Serial_State & yq_serial
+   };
+   joint_state_pub_->publish(joint_msg);
+   
+-  //cyy_add
+- geometry_msgs::msg::TransformStamped t;
+-t.header.stamp = this->get_clock()->now();
+-t.header.frame_id = "gimbal_link";
+-t.child_frame_id = "camera_link";
+-t.transform.translation.x = 0.0;
+-t.transform.translation.y = 0.0;
+-t.transform.translation.z = 0.0;
+-
+-double roll = 0.0;
+-double pitch = last_gimbal_pitch_odom_joint_;
+-double yaw =last_gimbal_yaw_odom_joint_;
+-tf2::Quaternion q1;
+-q1.setRPY(roll, pitch, yaw);
+-q1.normalize();
+-t.transform.rotation = tf2::toMsg(q1);
+-
+-tf_broadcaster_->sendTransform(t);
+- geometry_msgs::msg::TransformStamped t1;
+-      t1.header.stamp = this->get_clock()->now();
+-      // Inverted back to make odom the parent, preventing multiple parents for odom
+-      t1.header.frame_id = "odom";
+-      t1.child_frame_id = "gimbal_link";
+-      tf2::Quaternion q2;
+-      // Assuming original was gimbal_link->odom, inverse:
+-      // R_inv = +chassis_yaw
+-      // t_inv = - R_inv * t_orig
+-      q2.setRPY(0, 0, chassis_yaw);
+-      t1.transform.rotation = tf2::toMsg(q2);
+-      // Simple inverse of translation assuming pure yaw rotation:
+-      t1.transform.translation.x = -(-0.09 * cos(chassis_yaw) - 0.0 * sin(chassis_yaw));
+-      t1.transform.translation.y = -(-0.09 * sin(chassis_yaw) + 0.0 * cos(chassis_yaw));
+-      t1.transform.translation.z = -(-0.43);
+-      tf_broadcaster_->sendTransform(t1);
++  // [FIX] Broadcast gimbal TF chain: base_footprint -> gimbal_link -> camera_link
++  // KEY CHANGE: gimbal_link is now parented to base_footprint (NOT odom).
++  // Previously parenting to odom caused sensor_scan_generation to mathematically
++  // cancel out the lidar odometry, making navigation yaw equal to the drifting
++  // big_yaw_imu. Now we use the RELATIVE gimbal yaw from the encoder (yaw field),
++  // which is stable and represents only the chassis-to-gimbal angle.
++  // big_yaw_imu (chassis_yaw) is intentionally NOT used for TF anymore.
++  float gimbal_relative_yaw = yq_serial_data.data.yaw * PI / 180;
++
++  geometry_msgs::msg::TransformStamped t1;
++  t1.header.stamp = this->get_clock()->now();
++  t1.header.frame_id = "base_footprint";  // parent: base_footprint (lidar-based, stable)
++  t1.child_frame_id = "gimbal_link";
++  tf2::Quaternion q2;
++  q2.setRPY(0, 0, gimbal_relative_yaw);  // relative yaw from encoder, not big_yaw_imu
++  t1.transform.rotation = tf2::toMsg(q2);
++  // Fixed mount offset of gimbal relative to base_footprint
++  t1.transform.translation.x = 0.09;
++  t1.transform.translation.y = 0.0;
++  t1.transform.translation.z = 0.43;
++  tf_broadcaster_->sendTransform(t1);
++
++  geometry_msgs::msg::TransformStamped t;
++  t.header.stamp = this->get_clock()->now();
++  t.header.frame_id = "gimbal_link";
++  t.child_frame_id = "camera_link";
++  t.transform.translation.x = 0.0;
++  t.transform.translation.y = 0.0;
++  t.transform.translation.z = 0.0;
++  tf2::Quaternion q1;
++  q1.setRPY(0.0, last_gimbal_pitch_odom_joint_, last_gimbal_yaw_odom_joint_);
++  q1.normalize();
++  t.transform.rotation = tf2::toMsg(q1);
++  tf_broadcaster_->sendTransform(t);
+ 
+   // Note: chassis_real_vx/vy/wz moved to Judge System/Reserved fields. 
+   // Disabling velocity publication from YQ data as fields are removed.
+-- 
+2.47.0.windows.1
+

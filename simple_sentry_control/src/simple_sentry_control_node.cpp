@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -34,22 +35,35 @@ public:
     // HP logic: <= low triggers retreat with highest priority, >= recover restarts forward route.
     this->declare_parameter("hp_low_threshold", 150);
     this->declare_parameter("hp_recover_threshold", 400);
+    // Clamp: if recover threshold > referee max HP (e.g. 600), hp >= recover would never hold.
+    this->declare_parameter("hp_max", 600);
 
     this->declare_parameter("origin_x", 0.0);
     this->declare_parameter("origin_y", 0.0);
     this->declare_parameter("origin_yaw", 0.0);
+    this->declare_parameter("origin_chassis_mode", 1); // 1 typically Free Mode, 3 for Spin
+
+    this->declare_parameter("heal_x", 0.0);
+    this->declare_parameter("heal_y", 0.0);
+    this->declare_parameter("heal_yaw", 0.0);
+    this->declare_parameter("heal_chassis_mode", 1);
 
     this->declare_parameter("point_a_x", 1.0);
     this->declare_parameter("point_a_y",  4.34);
     this->declare_parameter("point_a_yaw", 0.0);
+    this->declare_parameter("point_a_chassis_mode", 3);
 
     this->declare_parameter("point_b_x", -1.9);
     this->declare_parameter("point_b_y", 5.2);
     this->declare_parameter("point_b_yaw", 0.0);
+    this->declare_parameter("point_b_chassis_mode", 3);
 
     this->declare_parameter("point_c_x", -5.0);
     this->declare_parameter("point_c_y", 3.27);
     this->declare_parameter("point_c_yaw", 0.0);
+    this->declare_parameter("point_c_chassis_mode", 3);
+
+    this->declare_parameter("wait_for_match_start", false);
 
     nav_client_ = rclcpp_action::create_client<nav2_msgs::action::NavigateToPose>(this, "navigate_to_pose");
 
@@ -71,7 +85,7 @@ public:
   }
 
 private:
-  enum class Waypoint { ORIGIN, A, B, C };
+  enum class Waypoint { HEAL, ORIGIN, A, B, C };
   enum class MissionPhase { FORWARD, RETREAT };
 
   struct Pose2D
@@ -88,72 +102,100 @@ private:
       return;
     }
 
-    // [Safety Check] Only allow execution if game_status is "Match in Progress" (4)
-    if (!game_status_) {
-      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "\033[93m等待比赛开始信号 (game_status)... \033[0m");
-      return;
-    }
-
-    if (game_status_->game_progress != 4) {
-      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000, 
-        "\033[91m当前比赛状态: %d (非 match_in_progress)，停留在原地。\033[0m", 
-        static_cast<int>(game_status_->game_progress));
-      
-      if (nav_goal_active_) {
-        cancelNavGoal();
+    if (this->get_parameter("wait_for_match_start").as_bool()) {
+      if (!game_status_) {
+        RCLCPP_INFO_THROTTLE(
+          this->get_logger(), *this->get_clock(), 5000,
+          "等待比赛开始信号 (referee/game_status)...");
+        return;
       }
-      return;
+      if (game_status_->game_progress != 4) {
+        RCLCPP_INFO_THROTTLE(
+          this->get_logger(), *this->get_clock(), 5000,
+          "当前比赛状态: %d (非 match_in_progress)，停留在原地。",
+          static_cast<int>(game_status_->game_progress));
+        if (nav_goal_active_) {
+          cancelNavGoal();
+        }
+        return;
+      }
     }
-
 
     const int hp = static_cast<int>(robot_status_->current_hp);
     const int hp_low = this->get_parameter("hp_low_threshold").as_int();
-    const int hp_recover = this->get_parameter("hp_recover_threshold").as_int();
+    const int hp_recover_raw = this->get_parameter("hp_recover_threshold").as_int();
+    const int hp_max = std::max(1, this->get_parameter("hp_max").as_int());
+    int hp_recover = std::min(hp_recover_raw, hp_max);
+    if (hp_recover <= hp_low) {
+      hp_recover = hp_low + 1;
+    }
+
+    if (hp_recover_raw > hp_max) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 30000,
+        "hp_recover_threshold (%d) > hp_max (%d): effective recover HP = %d (否则满血也永远回不到前进)。",
+        hp_recover_raw, hp_max, hp_recover);
+    }
 
     if (hp <= hp_low) {
       if (phase_ != MissionPhase::RETREAT) {
         RCLCPP_WARN(this->get_logger(), "HP=%d <= %d, preempt current mission and retreat.", hp, hp_low);
         enterRetreatMode();
       }
-      stepRetreat();
-      return;
-    }
-
-    if (phase_ == MissionPhase::RETREAT) {
+      stepRetreat(hp, hp_recover);
+    } else if (phase_ == MissionPhase::RETREAT) {
       if (hp >= hp_recover) {
-        if (!nav_goal_active_ && current_waypoint_ == Waypoint::ORIGIN) {
-          RCLCPP_INFO(this->get_logger(), "HP recovered to %d >= %d, restart O->A->B->C.", hp, hp_recover);
+        if (!nav_goal_active_ && current_waypoint_ == Waypoint::HEAL) {
+          RCLCPP_INFO(this->get_logger(), "HP recovered to %d >= %d, restart HEAL->A->B->C.", hp, hp_recover);
           phase_ = MissionPhase::FORWARD;
-          retreat_first_target_.reset();
-          current_waypoint_ = Waypoint::ORIGIN; // Reset to start patrol again
+          // current_waypoint_ remains HEAL; next stepForward sends HEAL -> A
         } else {
-          stepRetreat();
+          stepRetreat(hp, hp_recover);
         }
       } else {
-        stepRetreat();
+        stepRetreat(hp, hp_recover);
       }
-      return;
-    }
-
-    if (pending_target_.has_value()) {
-      const auto robot_pose = getRobotPose();
-      if (robot_pose.has_value()) {
-        const auto target_pose = waypointPose(pending_target_.value());
-        double dist = std::hypot(robot_pose->x - target_pose.x, robot_pose->y - target_pose.y);
-        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, 
-          "\033[93m[SentryControl] 当前目标: %d, 剩余距离: %.2f m\033[0m", 
-          static_cast<int>(pending_target_.value()), dist);
-      }
-    }
-
-    stepForward();
-
-    // Publish chassis mode based on game status
-    auto mode_msg = example_interfaces::msg::UInt8();
-    if (game_status_ && game_status_->game_progress == 4) {
-      mode_msg.data = 3;  // Spin mode
     } else {
-      mode_msg.data = 1;  // Free mode
+      if (pending_target_.has_value()) {
+        const auto robot_pose = getRobotPose();
+        if (robot_pose.has_value()) {
+          const auto target_pose = waypointPose(pending_target_.value());
+          double dist = std::hypot(robot_pose->x - target_pose.x, robot_pose->y - target_pose.y);
+          RCLCPP_INFO_THROTTLE(
+            this->get_logger(), *this->get_clock(), 2000,
+            "\033[93m[SentryControl] 当前目标: %d, 剩余距离: %.2f m\033[0m",
+            static_cast<int>(pending_target_.value()), dist);
+        }
+      }
+      stepForward();
+    }
+
+    // Single publish per tick: low HP / retreat always mode 1 (never 3 here).
+    auto mode_msg = example_interfaces::msg::UInt8();
+    if (hp <= hp_low || phase_ == MissionPhase::RETREAT) {
+      mode_msg.data = 1;
+    } else {
+      const Waypoint active_wp = pending_target_.has_value() ? pending_target_.value() : current_waypoint_;
+      switch (active_wp) {
+        case Waypoint::HEAL:
+          mode_msg.data = this->get_parameter("heal_chassis_mode").as_int();
+          break;
+        case Waypoint::ORIGIN:
+          mode_msg.data = this->get_parameter("origin_chassis_mode").as_int();
+          break;
+        case Waypoint::A:
+          mode_msg.data = this->get_parameter("point_a_chassis_mode").as_int();
+          break;
+        case Waypoint::B:
+          mode_msg.data = this->get_parameter("point_b_chassis_mode").as_int();
+          break;
+        case Waypoint::C:
+          mode_msg.data = this->get_parameter("point_c_chassis_mode").as_int();
+          break;
+        default:
+          mode_msg.data = 1;
+          break;
+      }
     }
     pub_chassis_mode_->publish(mode_msg);
   }
@@ -179,6 +221,9 @@ private:
     }
 
     switch (current_waypoint_) {
+      case Waypoint::HEAL:
+        sendGoalTo(Waypoint::A, "Forward: HEAL -> A");
+        break;
       case Waypoint::ORIGIN:
         sendGoalTo(Waypoint::A, "Forward: O -> A");
         break;
@@ -209,62 +254,33 @@ private:
   void enterRetreatMode()
   {
     phase_ = MissionPhase::RETREAT;
-
-    if (pending_target_.has_value()) {
-      switch (pending_target_.value()) {
-        case Waypoint::C:
-          retreat_first_target_ = Waypoint::B;
-          break;
-        case Waypoint::B:
-          retreat_first_target_ = Waypoint::A;
-          break;
-        case Waypoint::A:
-          retreat_first_target_ = Waypoint::ORIGIN;
-          break;
-        case Waypoint::ORIGIN:
-          retreat_first_target_ = Waypoint::ORIGIN;
-          break;
-      }
-    } else {
-      retreat_first_target_.reset();
-    }
-
     cancelNavGoal();
   }
 
-  void stepRetreat()
+  void stepRetreat(int hp, int hp_recover)
   {
     if (nav_goal_active_) {
       return;
     }
 
-    if (retreat_first_target_.has_value()) {
-      const Waypoint first_target = retreat_first_target_.value();
-      retreat_first_target_.reset();
-      sendGoalTo(first_target, "Retreat: Falling back");
+    if (current_waypoint_ == Waypoint::HEAL) {
+      RCLCPP_INFO_THROTTLE(
+        this->get_logger(), *this->get_clock(), 5000,
+        "[SentryControl] 已在 HEAL，当前 HP=%d，需 HP>=%d 才结束撤退并继续前进（见 hp_recover_threshold / hp_max）。",
+        hp, hp_recover);
       return;
     }
 
-    switch (current_waypoint_) {
-      case Waypoint::C:
-        sendGoalTo(Waypoint::B, "Retreat: C -> B");
-        break;
-      case Waypoint::B:
-        sendGoalTo(Waypoint::A, "Retreat: B -> A");
-        break;
-      case Waypoint::A:
-        sendGoalTo(Waypoint::ORIGIN, "Retreat: A -> O");
-        break;
-      case Waypoint::ORIGIN:
-        // Stay at ORIGIN
-        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "[SentryControl] 已达返程目的地 (ORIGIN)。");
-        break;
-    }
+    sendGoalTo(Waypoint::HEAL, "Retreat: direct to HEAL");
   }
 
   Pose2D waypointPose(const Waypoint wp) const
   {
     switch (wp) {
+      case Waypoint::HEAL:
+        return {
+          this->get_parameter("heal_x").as_double(), this->get_parameter("heal_y").as_double(),
+          this->get_parameter("heal_yaw").as_double()};
       case Waypoint::ORIGIN:
         return {
           this->get_parameter("origin_x").as_double(), this->get_parameter("origin_y").as_double(),
@@ -346,7 +362,6 @@ private:
   MissionPhase phase_ = MissionPhase::FORWARD;
   Waypoint current_waypoint_ = Waypoint::ORIGIN;
   std::optional<Waypoint> pending_target_;
-  std::optional<Waypoint> retreat_first_target_;
 
   pb_rm_interfaces::msg::RobotStatus::SharedPtr robot_status_;
   pb_rm_interfaces::msg::GameStatus::SharedPtr game_status_;

@@ -106,7 +106,7 @@ rm_interfaces::msg::GimbalCmd Solver::solve(const rm_interfaces::msg::Target &ta
   // Get current roll, yaw and pitch of gimbal
   try {
     auto gimbal_tf =
-      tf2_buffer_->lookupTransform(target.header.frame_id, "camera_link", tf2::TimePointZero);
+      tf2_buffer_->lookupTransform(target.header.frame_id, "vision_camera_link", tf2::TimePointZero); //camera_link gimbal_link
     auto msg_q = gimbal_tf.transform.rotation;
     tf2::Quaternion tf_q;
     tf2::fromMsg(msg_q, tf_q);
@@ -117,15 +117,28 @@ rm_interfaces::msg::GimbalCmd Solver::solve(const rm_interfaces::msg::Target &ta
     throw ex;
   }
 
-  // Predict target position (flying time + prediction delay)
+  // Predict target position iteratively (flying time + prediction delay)
   Eigen::Vector3d target_position(target.position.x, target.position.y, target.position.z);
+  Eigen::Vector3d initial_position = target_position;
   double target_yaw = target.yaw;
-  double flying_time = trajectory_compensator_->getFlyingTime(target_position);
-  double dt =
-    (current_time - rclcpp::Time(target.header.stamp)).seconds() + flying_time + prediction_delay_;
-  target_position.x() += dt * target.velocity.x;
-  target_position.y() += dt * target.velocity.y;
-  target_position.z() += dt * target.velocity.z;
+  double time_diff = (current_time - rclcpp::Time(target.header.stamp)).seconds();
+  double flying_time = trajectory_compensator_->getFlyingTime(initial_position);
+  double dt = time_diff + flying_time + prediction_delay_;
+
+  for (int i = 0; i < 10; ++i) {
+    dt = time_diff + flying_time + prediction_delay_;
+    target_position.x() = initial_position.x() + dt * target.velocity.x;
+    target_position.y() = initial_position.y() + dt * target.velocity.y;
+    target_position.z() = initial_position.z() + dt * target.velocity.z;
+
+    double next_flying_time = trajectory_compensator_->getFlyingTime(target_position);
+    if (std::abs(next_flying_time - flying_time) < 1e-3) {
+      flying_time = next_flying_time;
+      break;
+    }
+    flying_time = next_flying_time;
+  }
+  
   target_yaw += dt * yaw_prediction_scale_ * target.v_yaw;
 
   // ── Armor selection ────────────────────────────────────────────────────────
@@ -216,7 +229,10 @@ rm_interfaces::msg::GimbalCmd Solver::solve(const rm_interfaces::msg::Target &ta
     // When spinning fast, always allow fire toward center
     gimbal_cmd.fire_advice = true;
   } else {
-    gimbal_cmd.fire_advice = isOnTarget(rpy_[2], rpy_[1], cmd_yaw, cmd_pitch, distance);
+    double center_yaw = std::atan2(target_position.y(), target_position.x());
+    double armor_yaw = target_yaw + idx * (2 * M_PI / target.armors_num);
+    double diff_yaw = angles::shortest_angular_distance(center_yaw, armor_yaw);
+    gimbal_cmd.fire_advice = isOnTarget(target, rpy_[2], rpy_[1], cmd_yaw, cmd_pitch, distance, diff_yaw, fsm);
   }
 
   gimbal_cmd.yaw        = cmd_yaw   * 180.0 / M_PI;
@@ -226,29 +242,85 @@ rm_interfaces::msg::GimbalCmd Solver::solve(const rm_interfaces::msg::Target &ta
 
   // ── TinyMPC trajectory smoothing ────────────────────────────────────────
   if (enable_mpc_ && mpc_controller_) {
+    // Sync MPC internal state with actual physical gimbal position on reset
+    if (reset_mpc_) {
+      prev_yaw_cmd_   = rpy_[2];
+      prev_pitch_cmd_ = rpy_[1];
+      prev_yaw_vel_   = 0.0;
+      prev_pitch_vel_ = 0.0;
+      reset_mpc_      = false;
+    }
+
     try {
       std::vector<double> ref_yaw_p, ref_yaw_v, ref_pitch_p, ref_pitch_v;
-      mpc_controller_->buildConstVelRef(cmd_yaw,   prev_yaw_vel_,   ref_yaw_p,   ref_yaw_v);
-      mpc_controller_->buildConstVelRef(cmd_pitch, prev_pitch_vel_, ref_pitch_p, ref_pitch_v);
-      for (auto &p : ref_yaw_p)   p = cmd_yaw;
-      for (auto &p : ref_pitch_p) p = cmd_pitch;
+      
+      // Angle Unwrapping: Use shortest_angular_distance to ensure cmd_yaw doesn't jump 
+      // by 2PI near the boundary, preventing MPC from "spinning the long way around".
+      double unwrapped_yaw   = prev_yaw_cmd_   + angles::shortest_angular_distance(prev_yaw_cmd_,   cmd_yaw);
+      double unwrapped_pitch = prev_pitch_cmd_ + angles::shortest_angular_distance(prev_pitch_cmd_, cmd_pitch);
 
+      // ── Perfect wust_vision semantic restore ─────────────────────────────────
+      // Instead of integrating prev_yaw_cmd_, we create a reference chunk spanning 
+      // [-half_horizon, +half_horizon] centered exactly at the predicted target_yaw.
+      // ── Calculate dynamic dt for differentiated pitch velocity ──────────
+      double real_dt = 0.004; // Fallback to 250Hz (0.004s)
+      if (prev_solve_time_.nanoseconds() > 0) {
+        double dt_sec = (current_time - prev_solve_time_).seconds();
+        // Guard against massive spikes on first frames or large pauses
+        real_dt = std::clamp(dt_sec, 0.001, 0.050); 
+      }
+      prev_solve_time_ = current_time;
+
+      // yaw feedforward: use target angular velocity (directly from tracker)
+      double yaw_vel_ff = (fsm == AutoAimFsm::AIM_SINGLE_ARMOR) ? target.v_yaw : 0.0;
+
+      // pitch feedforward: finite difference of cmd_pitch over real inter-call interval
+      // Units: (rad - rad) / s = rad/s
+      double pitch_vel_ff = angles::shortest_angular_distance(prev_pitch_cmd_, unwrapped_pitch) / real_dt;
+
+      const int    half_horizon = mpc_controller_->params().horizon / 2;
+      const double dt_mpc      = mpc_controller_->params().dt;
+      double start_yaw   = unwrapped_yaw   - yaw_vel_ff   * (half_horizon * dt_mpc);
+      double start_pitch = unwrapped_pitch - pitch_vel_ff  * (half_horizon * dt_mpc);
+      
+      mpc_controller_->buildConstVelRef(start_yaw,   yaw_vel_ff,   ref_yaw_p,   ref_yaw_v);
+      mpc_controller_->buildConstVelRef(start_pitch, pitch_vel_ff, ref_pitch_p, ref_pitch_v);
+
+      // We explicitly bypass prev_yaw_cmd_ and start the solver at the exact start of the reference trajectory!
+      // This is exactly what x0 << traj_eigen(0,0) did in very_aimer.cpp.
       auto mpc_res = mpc_controller_->solve(
         ref_yaw_p, ref_yaw_v, ref_pitch_p, ref_pitch_v,
-        prev_yaw_cmd_, prev_yaw_vel_, prev_pitch_cmd_, prev_pitch_vel_,
-        /*result_step=*/0);
+        ref_yaw_p[0], ref_yaw_v[0], 
+        ref_pitch_p[0], ref_pitch_v[0],
+        /*result_step=*/half_horizon); // Extract the center point (t_hit)
 
       if (mpc_res.valid) {
+        // Output from the MPC centered time directly without integrating!
         const double sy = mpc_res.yaw.p;
         const double sp = mpc_res.pitch.p;
+        
+        // Store for next iteration (warm-start)
         prev_yaw_vel_   = mpc_res.yaw.v;
-        prev_pitch_vel_ = mpc_res.pitch.v;
+        prev_pitch_vel_ = pitch_vel_ff; 
         prev_yaw_cmd_   = sy;
         prev_pitch_cmd_ = sp;
-        gimbal_cmd.yaw        = sy * 180.0 / M_PI;
-        gimbal_cmd.pitch      = sp * 180.0 / M_PI;
-        gimbal_cmd.yaw_diff   = (sy - rpy_[2]) * 180.0 / M_PI;
-        gimbal_cmd.pitch_diff = (sp - rpy_[1]) * 180.0 / M_PI;
+
+        // Final output: Normalize back to [-PI, PI] for the lower computer
+        double norm_sy = angles::normalize_angle(sy);
+        double norm_sp = angles::normalize_angle(sp);
+        
+        gimbal_cmd.yaw        = norm_sy * 180.0 / M_PI;
+        gimbal_cmd.pitch      = norm_sp * 180.0 / M_PI;
+        gimbal_cmd.yaw_diff   = angles::shortest_angular_distance(rpy_[2], norm_sy) * 180.0 / M_PI;
+        gimbal_cmd.pitch_diff = angles::shortest_angular_distance(rpy_[1], norm_sp) * 180.0 / M_PI;
+
+        // MPC feedforward outputs (converted to deg/s and deg/s^2)
+        // Both velocity and acceleration come directly from MPC state/input output.
+        // No LPF applied — raw MPC output is sent to the lower computer.
+        gimbal_cmd.yaw_vel   = mpc_res.yaw.v   * 180.0 / M_PI;
+        gimbal_cmd.pitch_vel = mpc_res.pitch.v  * 180.0 / M_PI;
+        gimbal_cmd.yaw_acc   = mpc_res.yaw.a   * 180.0 / M_PI;
+        gimbal_cmd.pitch_acc = mpc_res.pitch.a * 180.0 / M_PI;
       }
     } catch (const std::exception &e) {
       FYT_WARN("armor_solver", "MPC solve failed: {}", e.what());
@@ -269,17 +341,38 @@ rm_interfaces::msg::GimbalCmd Solver::solve(const rm_interfaces::msg::Target &ta
   return gimbal_cmd;
 }
 
-bool Solver::isOnTarget(const double cur_yaw,
+bool Solver::isOnTarget(const rm_interfaces::msg::Target &target,
+                        const double cur_yaw,
                         const double cur_pitch,
                         const double target_yaw,
                         const double target_pitch,
-                        const double distance) const noexcept {
-  double shooting_range_yaw   = std::abs(atan2(shooting_range_w_ / 2, distance));
-  double shooting_range_pitch = std::abs(atan2(shooting_range_h_ / 2, distance));
+                        const double distance,
+                        const double diff_yaw,
+                        const AutoAimFsm fsm) const noexcept {
+  bool is_big = (target.id == "1" || target.id == "base" || (target.armors_num == 4 && (target.id == "guard" || target.id == "outpost")));
+  if (target.id == "3" || target.id == "4" || target.id == "5" || target.id == "2") {
+    // Standard armors are typically small
+    is_big = false; 
+  }
+  
+  double width = is_big ? 0.23 : 0.135; 
+  double height = is_big ? 0.13 : 0.125; 
+
+  double yaw_factor = 1.0;
+  if (fsm != AutoAimFsm::AIM_SINGLE_ARMOR) {
+    if (std::abs(diff_yaw) <= 30.0 / 180.0 * M_PI) {
+      yaw_factor = std::cos(diff_yaw);
+    }
+  } else {
+    yaw_factor = std::cos(diff_yaw);
+  }
+
+  double shooting_range_yaw   = std::abs(atan2(width / 2 * yaw_factor, distance));
+  double shooting_range_pitch = std::abs(atan2(height / 2, distance));
   shooting_range_yaw   = std::max(shooting_range_yaw,   0.8 * M_PI / 180.0);
   shooting_range_pitch = std::max(shooting_range_pitch, 0.8 * M_PI / 180.0);
   return (std::abs(cur_yaw   - target_yaw)   < shooting_range_yaw &&
-          std::abs(cur_pitch - target_pitch)  < shooting_range_pitch);
+          std::abs(cur_pitch - target_pitch) < shooting_range_pitch);
 }
 
 std::vector<Eigen::Vector3d> Solver::getArmorPositions(const Eigen::Vector3d &target_center,

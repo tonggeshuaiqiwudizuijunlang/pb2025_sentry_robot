@@ -450,7 +450,7 @@ controller_server:
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.5
-      movement_time_allowance: 10.0
+      movement_time_allowance: 3.0
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
@@ -481,9 +481,9 @@ controller_server:
       v_linear_max: 2.5
       v_angular_min: -3.0
       v_angular_max: 3.0
-      curvature_min: 0.4                                # 低曲率阈值，低于此值不减速。
-      curvature_max: 0.7                                # 高曲率阈值，高于此值大幅减速。
-      reduction_ratio_at_high_curvature: 0.5            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
+      curvature_min: 0.3                                # 低曲率阈值，低于此值不减速。
+      curvature_max: 0.6                                # 高曲率阈值，高于此值大幅减速。
+      reduction_ratio_at_high_curvature: 0.9            # 高曲率时的速度降低比例。
       curvature_forward_dist: 0.7                       # 前向距离，用于曲率计算
       curvature_backward_dist: 0.3                      # 后向距离，用于曲率计算
       max_velocity_scaling_factor_rate: 0.9             # 速度缩放因子的最大变化率

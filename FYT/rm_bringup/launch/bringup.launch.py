@@ -200,5 +200,17 @@ def generate_launch_description():
     
     if launch_params['navigation']:
         launch_description_list.append(robot_navigation_publisher)
-    
+
+    # [Method A] Connect vision TF tree root (imu_world) to the known TF tree root (odom).
+    # This is an identity transform — imu_world IS odom for the vision system's purposes.
+    # Without this, imu_world is an orphaned root that tf2 and Foxglove cannot resolve,
+    # causing all vision markers (armor_solver debug, target sphere, etc.) to be invisible.
+    imu_world_static_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='imu_world_to_odom_static_tf',
+        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'imu_world'],
+    )
+    launch_description_list.append(imu_world_static_tf)
+
     return LaunchDescription(launch_description_list)

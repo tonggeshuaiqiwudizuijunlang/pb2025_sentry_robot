@@ -33,6 +33,7 @@ public:
     this->declare_parameter("point_a_x", 1.0);
     this->declare_parameter("point_a_y", 0.0);
     this->declare_parameter("point_a_yaw", 0.0);
+    this->declare_parameter("chassis_mode", 3);
 
     nav_client_ =
       rclcpp_action::create_client<nav2_msgs::action::NavigateToPose>(this, "navigate_to_pose");
@@ -119,7 +120,7 @@ private:
     // Publish chassis mode based on game status
     auto mode_msg = example_interfaces::msg::UInt8();
     if (game_status_ && game_status_->game_progress == 4) {
-      mode_msg.data = 3;  // Spin mode (小陀螺)
+      mode_msg.data = this->get_parameter("chassis_mode").as_int();
     } else {
       mode_msg.data = 1;  // Free mode (自由)
     }

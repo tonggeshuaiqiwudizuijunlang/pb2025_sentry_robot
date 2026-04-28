@@ -80,11 +80,12 @@ public:
 
   /**
    * @param v_yaw        Current tracked angular velocity [rad/s]
-   * @param target_jumped  True when the tracker just switched to a new target robot
-   *                       (resets FSM to SINGLE)
+   * @param is_same_target  True when we are continuously tracking the SAME target
+   *                        (i.e., target did NOT jump). False when tracker just
+   *                        switched to a new robot → reset FSM to SINGLE.
    */
-  void update(double v_yaw, bool target_jumped) {
-    if (!target_jumped) {
+  void update(double v_yaw, bool is_same_target) {
+    if (!is_same_target) {
       state = AutoAimFsm::AIM_SINGLE_ARMOR;
       cnt_ = 0;
       return;
@@ -155,6 +156,8 @@ public:
 
   enum State { TRACKING_ARMOR = 0, TRACKING_CENTER = 1 } state;
 
+  void resetMpc() { reset_mpc_ = true; }
+
   std::vector<std::pair<double, double>> getTrajectory() const noexcept;
 
 private:
@@ -193,9 +196,11 @@ private:
                        std::array<double, 3> rpy,
                        double &yaw, double &pitch) const noexcept;
 
-  bool isOnTarget(double cur_yaw, double cur_pitch,
+  bool isOnTarget(const rm_interfaces::msg::Target &target,
+                  double cur_yaw, double cur_pitch,
                   double target_yaw, double target_pitch,
-                  double distance) const noexcept;
+                  double distance, double diff_yaw,
+                  AutoAimFsm fsm) const noexcept;
 
   // ── Components ───────────────────────────────────────────────────────────
 
@@ -206,12 +211,14 @@ private:
   // Enabled at runtime via ROS2 param "solver.enable_mpc"
   std::unique_ptr<GimbalMpcController> mpc_controller_;
   bool enable_mpc_ = false;
+  bool reset_mpc_ = true;
 
   // ── Persistent gimbal state (MPC warm-start) ─────────────────────────────
   double prev_yaw_cmd_   = 0.0;
   double prev_pitch_cmd_ = 0.0;
   double prev_yaw_vel_   = 0.0;
   double prev_pitch_vel_ = 0.0;
+  rclcpp::Time prev_solve_time_{0, 0, RCL_ROS_TIME};  ///< Timestamp of the last solve() call
 
   // ── Parameters ───────────────────────────────────────────────────────────
   std::array<double, 3> rpy_{};

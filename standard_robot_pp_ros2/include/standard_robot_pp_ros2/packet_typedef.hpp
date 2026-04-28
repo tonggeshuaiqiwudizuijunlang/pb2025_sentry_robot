@@ -436,10 +436,10 @@ struct SendRobotCmdData
       uint8_t reserved3;
       uint16_t reserved4;
       uint16_t reserved5;
-      float reserved6;
-      float reserved7;
-      float reserved8;
-      float reserved9;
+      float yaw_vel;    // 云台 Yaw 前馈速度 (deg/s), 武科迁移字段, 对应 wust reserved6
+      float pitch_vel;  // 云台 Pitch 前馈速度 (deg/s), 对应 wust reserved7
+      float yaw_acc;    // 云台 Yaw 前馈加速度 (deg/s²), 对应 wust reserved8
+      float pitch_acc;  // 云台 Pitch 前馈加速度 (deg/s²), 对应 wust reserved9
     } __attribute__((packed)) chassis;
 
     struct

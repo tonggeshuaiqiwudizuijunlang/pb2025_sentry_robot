@@ -43,7 +43,7 @@ public:
     video_path = this->declare_parameter("path", "/home/zcf/Downloads/rune.avi");
     std::string camera_info_url =
       this->declare_parameter("camera_info_url", "package://rm_bringup/config/camera_info.yaml");
-    std::string frame_id = this->declare_parameter("frame_id", "camera_optical_frame");
+    std::string frame_id = this->declare_parameter("frame_id", "vision_camera_optical_frame");
     int frame_rate = this->declare_parameter("frame_rate", 30);
     start_frame_ = this->declare_parameter("start_frame", 0);
     is_loop_ = this->declare_parameter("keep_looping", true);
@@ -84,7 +84,7 @@ public:
     } else {
       camera_info_manager_->setCameraName(video_path);
       sensor_msgs::msg::CameraInfo camera_info;
-      camera_info.header.frame_id = "camera_optical_frame";
+      camera_info.header.frame_id = frame_id; // [NEW] changed from hardcoded string
       camera_info.header.stamp = this->now();
       camera_info.width = image_msg_->width;
       camera_info.height = image_msg_->height;

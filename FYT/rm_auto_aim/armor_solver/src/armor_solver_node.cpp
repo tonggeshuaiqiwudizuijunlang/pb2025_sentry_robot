@@ -230,6 +230,7 @@ void ArmorSolverNode::timerCallback() {
     control_msg.yaw = 0;
     control_msg.fire_advice = false;
     gimbal_pub_->publish(control_msg);
+    solver_->resetMpc();
     return;
   }
 
@@ -314,6 +315,13 @@ void ArmorSolverNode::armorsCallback(const rm_interfaces::msg::Armors::SharedPtr
   for (auto &armor : armors_msg->armors) {
     geometry_msgs::msg::PoseStamped ps;
     ps.header = armors_msg->header;
+    
+    // Override frame_id to force the solver to use the correct dynamic vision TF tree
+    // that contains the proper camera-to-gimbal physical Z offset.
+    if (ps.header.frame_id == "camera_optical_frame") {
+      ps.header.frame_id = "vision_camera_optical_frame";
+    }
+
     ps.pose = armor.pose;
     try {
       armor.pose = tf2_buffer_->transform(ps, target_frame_).pose;
@@ -342,6 +350,7 @@ void ArmorSolverNode::armorsCallback(const rm_interfaces::msg::Armors::SharedPtr
   // Update tracker
   if (tracker_->tracker_state == Tracker::LOST) {
     tracker_->init(armors_msg);
+    solver_->resetMpc();
     // Initialize IMM with the SAME armor that init() selected as tracked_armor
     // CRITICAL: must NOT use armors_msg->armors[0] — it may be a different armor
     if (tracker_->use_imm && tracker_->imm && !tracker_->tracked_id.empty()) {
@@ -421,6 +430,9 @@ void ArmorSolverNode::armorsCallback(const rm_interfaces::msg::Armors::SharedPtr
       }
       last_tracked_id_ = tracker_->tracked_id;
       aim_fsm_.update(state(7), !target_jumped);  // state(7) = v_yaw
+      if (target_jumped) {
+        solver_->resetMpc();
+      }
       FYT_DEBUG("armor_solver", "AutoAimFSM state: {}",
         autoAimFsmToString(aim_fsm_.state));
       // ──────────────────────────────────────────────────────────────────
@@ -508,7 +520,7 @@ void ArmorSolverNode::publishMarkers(const rm_interfaces::msg::Target &target_ms
 
     trajectory_marker_.action = visualization_msgs::msg::Marker::ADD;
     trajectory_marker_.points.clear();
-    trajectory_marker_.header.frame_id = "camera_link";
+    trajectory_marker_.header.frame_id = "vision_camera_link";
     for (const auto &point : solver_->getTrajectory()) {
       geometry_msgs::msg::Point p;
       p.x = point.first;

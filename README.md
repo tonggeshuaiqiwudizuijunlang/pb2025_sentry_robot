@@ -77,6 +77,8 @@ colcon build --packages-select standard_robot_pp_ros2 pb2025_sentry_behavior
 
 本项目的开发站在了巨人的肩膀上，部分核心算法与框架深度参考并二次开发了以下优秀的 RoboMaster 社区开源成果，在此向各位开源先驱致以最诚挚的敬意：
 
+*   **北极熊战队 (Polar Bear)**: 感谢战队提供的哨兵机器人全栈开发架构与 pb2025 系列算法支持。
+*   **FYT 战队 (FengYunTu)**: 感谢战队开源的视觉识别框架与高效的自瞄系统实现。
 *   **[rmoss_core](https://github.com/robomaster-oss/rmoss_core)**: RoboMaster 社区提供的通用基础模块。
 *   **[TUP-InfantryVision-2022](https://github.com/tup-robomaster/TUP-InfantryVision-2022)** & **[TUP-NN-Train-2](https://github.com/tup-robomaster/TUP-NN-Train-2)**: 感谢清华大学（TUP）战队提供的视觉识别算法参考与 YOLOX 关键点模型训练框架。
 *   **[rm_vision-OpenVINO](https://github.com/Ericsii/rm_vision-OpenVINO)**: 感谢四川大学提供的 OpenVINO 异步推理与部署方案。

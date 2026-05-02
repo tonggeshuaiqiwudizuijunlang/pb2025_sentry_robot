@@ -146,8 +146,8 @@ private:
       lights_data_pub_;
   rclcpp::Publisher<rm_interfaces::msg::DebugArmors>::SharedPtr
       armors_data_pub_;
-  image_transport::Publisher binary_img_pub_;
-  image_transport::Publisher number_img_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr binary_img_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr number_img_pub_;
   image_transport::Publisher result_img_pub_;
 };
 

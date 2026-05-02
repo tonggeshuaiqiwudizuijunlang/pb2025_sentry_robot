@@ -317,9 +317,9 @@ std::vector<Armor> ArmorDetectorNode::detectArmors(
 
   // Publish debug info
   if (debug_) {
-    binary_img_pub_.publish(
-        cv_bridge::CvImage(img_msg->header, "mono8", detector_->binary_img)
-            .toImageMsg());
+    binary_img_pub_->publish(
+        *cv_bridge::CvImage(img_msg->header, "mono8", detector_->binary_img)
+             .toImageMsg());
 
     // Sort lights and armors data by x coordinate
     std::sort(detector_->debug_lights.data.begin(),
@@ -338,7 +338,7 @@ std::vector<Armor> ArmorDetectorNode::detectArmors(
 
     if (!armors.empty()) {
       auto all_num_img = detector_->getAllNumbersImage();
-      number_img_pub_.publish(
+      number_img_pub_->publish(
           *cv_bridge::CvImage(img_msg->header, "mono8", all_num_img)
                .toImageMsg());
     }
@@ -420,9 +420,9 @@ void ArmorDetectorNode::createDebugPublishers() noexcept {
   this->declare_parameter("armor_detector.result_img.jpeg_quality", 50);
   this->declare_parameter("armor_detector.binary_img.jpeg_quality", 50);
   binary_img_pub_ =
-      image_transport::create_publisher(this, "armor_detector/binary_img");
+      this->create_publisher<sensor_msgs::msg::Image>("armor_detector/binary_img", 10);
   number_img_pub_ =
-      image_transport::create_publisher(this, "armor_detector/number_img");
+      this->create_publisher<sensor_msgs::msg::Image>("armor_detector/number_img", 10);
   result_img_pub_ =
       image_transport::create_publisher(this, "armor_detector/result_img");
 }
@@ -431,8 +431,8 @@ void ArmorDetectorNode::destroyDebugPublishers() noexcept {
   lights_data_pub_.reset();
   armors_data_pub_.reset();
 
-  binary_img_pub_.shutdown();
-  number_img_pub_.shutdown();
+  binary_img_pub_.reset();
+  number_img_pub_.reset();
   result_img_pub_.shutdown();
 }
 

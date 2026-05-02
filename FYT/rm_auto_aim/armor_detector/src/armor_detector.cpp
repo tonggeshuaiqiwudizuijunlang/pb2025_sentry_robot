@@ -99,6 +99,25 @@ std::vector<Light> Detector::findLights(const cv::Mat &rgb_img,
         sum_r += rgb_img.at<cv::Vec3b>(point.y, point.x)[0];
         sum_b += rgb_img.at<cv::Vec3b>(point.y, point.x)[2];
       }
+      // 1. HSV 空间过滤紫色
+      cv::Rect rect = cv::boundingRect(contour);
+      cv::Mat roi_rgb = rgb_img(rect);
+      cv::Mat roi_hsv;
+      cv::cvtColor(roi_rgb, roi_hsv, cv::COLOR_RGB2HSV);
+
+      int sum_h = 0;
+      for (const auto &point : contour) {
+        sum_h += roi_hsv.at<cv::Vec3b>(point.y - rect.y, point.x - rect.x)[0];
+      }
+      int avg_h = sum_h / static_cast<int>(contour.size());
+
+      // OpenCV 中 Hue 范围是 0-180
+      // 红色: 0-10 / 170-180 | 蓝色: 100-120 | 紫色: 125-160
+      if (avg_h >= 125 && avg_h <= 160) {
+        continue; // 如果是紫色，直接抛弃这个光条
+      }
+
+      // 2. 传统的 R-B 差值判断
       if (std::abs(sum_r - sum_b) / static_cast<int>(contour.size()) >
           light_params.color_diff_thresh) {
         light.color = sum_r > sum_b ? EnemyColor::RED : EnemyColor::BLUE;

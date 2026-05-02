@@ -45,8 +45,14 @@ def generate_launch_description():
     rviz_config_file = LaunchConfiguration("rviz_config_file")
     use_robot_state_pub = LaunchConfiguration("use_robot_state_pub")
     use_rviz = LaunchConfiguration("use_rviz")
+    nav_mode = LaunchConfiguration("nav_mode")
 
     # Declare the launch arguments
+    declare_nav_mode_cmd = DeclareLaunchArgument(
+        "nav_mode",
+        default_value="single",
+        description="Navigation mode: 'single' or 'multi' (continuous waypoint tracking)",
+    )
     declare_namespace_cmd = DeclareLaunchArgument(
         "namespace",
         default_value="",
@@ -200,6 +206,24 @@ def generate_launch_description():
         }.items(),
     )
 
+    from launch.conditions import LaunchConfigurationEquals
+    waypoint_manager_cmd = Node(
+        package="simple_sentry_control",
+        executable="waypoint_manager",
+        name="waypoint_manager",
+        output="screen",
+        condition=LaunchConfigurationEquals("nav_mode", "multi"),
+        parameters=[
+            {
+                "waypoint_file": os.path.join(
+                    bringup_dir,
+                    "data",
+                    "sample_wp.csv",
+                )
+            }
+        ],
+    )
+
     ld = LaunchDescription()
 
     # Declare the launch options
@@ -216,12 +240,14 @@ def generate_launch_description():
     ld.add_action(declare_use_robot_state_pub_cmd)
     ld.add_action(declare_use_rviz_cmd)
     ld.add_action(declare_use_respawn_cmd)
+    ld.add_action(declare_nav_mode_cmd)
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_robot_state_publisher_cmd)
     ld.add_action(start_livox_ros_driver2_node)
     ld.add_action(bringup_cmd)
     ld.add_action(joy_teleop_cmd)
+    ld.add_action(waypoint_manager_cmd)
     ld.add_action(rviz_cmd)
 
     return ld

@@ -18,6 +18,10 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(example_interfaces REQUIRED)
 
 add_library(simple_sentry_control_node SHARED src/simple_sentry_control_node.cpp)
+
+add_executable(waypoint_manager src/waypoint_manager.cpp)
+ament_target_dependencies(waypoint_manager rclcpp rclcpp_action nav2_msgs geometry_msgs std_srvs)
+
 target_include_directories(simple_sentry_control_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
@@ -58,6 +62,7 @@ install(TARGETS
   simple_sentry_control_node_exec
   simple_sentry_control_two_point_node
   simple_sentry_control_two_point_node_exec
+  waypoint_manager
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
